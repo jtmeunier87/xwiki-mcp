@@ -1,0 +1,7 @@
+.env
+.mcp.json
+node_modules/
+dist/
+doc/
+.claude/
+.idea/
