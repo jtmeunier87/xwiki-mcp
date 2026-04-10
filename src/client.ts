@@ -33,6 +33,13 @@ import type {
   QueryResult,
   RenderResult,
   RecentChange,
+  XWikiWikiTagsResponse,
+  XWikiTaggedPagesResponse,
+  XWikiWikiPagesResponse,
+  XWikiObjectPropertyResponse,
+  WikiTag,
+  ObjectProperty,
+  ExportResult,
 } from './types.js';
 
 export class XWikiError extends Error {
@@ -823,6 +830,120 @@ export class XWikiClient {
       modifier: h.modifier ? h.modifier.replace(/^xwiki:XWiki\./, '') : undefined,
       comment: h.comment || undefined,
     }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 5: Wiki-level tags, pages filter, export, object property
+  // ---------------------------------------------------------------------------
+
+  /**
+   * List all tags used anywhere in the wiki.
+   * Endpoint: GET /wikis/xwiki/tags
+   */
+  async getAllWikiTags(): Promise<WikiTag[]> {
+    const data = await this.get<XWikiWikiTagsResponse>('/tags');
+    return (data.tags ?? []).map(t => ({ name: t.name }));
+  }
+
+  /**
+   * Get all pages that have a specific tag.
+   * Endpoint: GET /wikis/xwiki/tags/{tag}?number=N
+   * Multiple tags can be comma-separated: /tags/tag1,tag2
+   */
+  async getPagesByTag(tag: string, limit = 50): Promise<PageSummary[]> {
+    const encoded = encodeURIComponent(tag);
+    const data = await this.get<XWikiTaggedPagesResponse>(`/tags/${encoded}`, { number: limit });
+    return (data.pageSummaries ?? []).map(p => ({
+      id: p.id,
+      title: p.title ?? p.fullName ?? p.id,
+      parent: p.parent,
+      url: p.xwikiAbsoluteUrl ?? '',
+    }));
+  }
+
+  /**
+   * Find pages wiki-wide with optional filters for name, space, and/or author.
+   * Endpoint: GET /wikis/xwiki/pages?name=...&space=...&author=...
+   * At least one filter should be provided for useful results.
+   */
+  async findPages(
+    filters: { name?: string; space?: string; author?: string },
+    limit = 50,
+  ): Promise<PageSummary[]> {
+    const params: Record<string, string | number> = { number: limit };
+    if (filters.name)   params['name']   = filters.name;
+    if (filters.space)  params['space']  = filters.space;
+    if (filters.author) params['author'] = filters.author;
+
+    const data = await this.get<XWikiWikiPagesResponse>('/pages', params);
+    // Deduplicate by fullName (the /pages endpoint sometimes returns duplicates)
+    const seen = new Set<string>();
+    return (data.pageSummaries ?? []).filter(p => {
+      const key = p.fullName ?? p.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(p => ({
+      id: p.id,
+      title: p.title ?? p.fullName ?? p.id,
+      parent: p.parent,
+      url: p.xwikiAbsoluteUrl ?? '',
+    }));
+  }
+
+  /**
+   * Export a page as PDF.
+   * Uses the xWiki action URL: /bin/export/{space}/{page}?format=pdf
+   * Returns base64-encoded binary content.
+   */
+  async exportPage(space: string, page: string): Promise<ExportResult> {
+    const actionUrl = `${config.baseUrl}/bin/export/${encodeURIComponent(space)}/${encodeURIComponent(page)}`;
+    const url = new URL(actionUrl);
+    url.searchParams.set('format', 'pdf');
+
+    const response = await fetch(url.toString(), {
+      headers: { ...this.authHeaders() },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new XWikiError(`exportPage failed: ${response.statusText}`, response.status);
+
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const content_base64 = Buffer.from(bytes).toString('base64');
+    const content_type = response.headers.get('content-type') ?? 'application/pdf';
+
+    return {
+      space,
+      page,
+      format: 'pdf',
+      content_base64,
+      content_type,
+      size_bytes: bytes.length,
+    };
+  }
+
+  /**
+   * Get a single named property from an XObject.
+   * Endpoint: GET /spaces/.../pages/{pg}/objects/{class}/{n}/properties/{prop}
+   */
+  async getObjectProperty(
+    space: string,
+    page: string,
+    className: string,
+    objectNumber: number,
+    propertyName: string,
+  ): Promise<ObjectProperty> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}/properties/${encodeURIComponent(propertyName)}`;
+    const data = await this.get<XWikiObjectPropertyResponse>(path);
+    // Single-property endpoint returns the property directly at root level
+    if (data.name === undefined && data.value === undefined) {
+      throw new XWikiError(`Property '${propertyName}' not found on ${className}#${objectNumber}`, 404);
+    }
+    return {
+      name: data.name ?? propertyName,
+      value: data.value ?? null,
+      type: data.type,
+    };
   }
 
   // ---------------------------------------------------------------------------

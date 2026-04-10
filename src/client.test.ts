@@ -885,3 +885,287 @@ describe('getRecentChanges', () => {
     await expect(new XWikiClient().getRecentChanges()).rejects.toThrow(XWikiError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5: getAllWikiTags
+// ---------------------------------------------------------------------------
+
+describe('getAllWikiTags', () => {
+  it('returns list of wiki tags', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      tags: [{ name: 'PM' }, { name: 'AV' }, { name: 'AD' }],
+    }));
+
+    const client = new XWikiClient();
+    const tags = await client.getAllWikiTags();
+
+    expect(tags).toHaveLength(3);
+    expect(tags[0].name).toBe('PM');
+    expect(tags[2].name).toBe('AD');
+  });
+
+  it('calls the /tags endpoint at wiki level', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ tags: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getAllWikiTags();
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/wikis/xwiki/tags');
+    expect(url).toContain('media=json');
+    // Must not contain /spaces/ — this is wiki-level
+    expect(url).not.toContain('/spaces/');
+  });
+
+  it('returns empty array when tags key is missing', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const tags = await new XWikiClient().getAllWikiTags();
+    expect(tags).toEqual([]);
+  });
+
+  it('throws XWikiError on 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 401, statusText: 'Unauthorized',
+      headers: { get: () => null },
+    }));
+    await expect(new XWikiClient().getAllWikiTags()).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5: getPagesByTag
+// ---------------------------------------------------------------------------
+
+describe('getPagesByTag', () => {
+  it('returns pages for a tag mapped to PageSummary shape', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      pageSummaries: [
+        { id: 'xwiki:Handbook.WebHome', fullName: 'Handbook.WebHome', title: 'Handbook', xwikiAbsoluteUrl: 'https://wiki.example.com/Handbook/WebHome' },
+        { id: 'xwiki:Main.Docs', fullName: 'Main.Docs', title: 'Docs', xwikiAbsoluteUrl: 'https://wiki.example.com/Main/Docs' },
+      ],
+    }));
+
+    const pages = await new XWikiClient().getPagesByTag('PM', 50);
+
+    expect(pages).toHaveLength(2);
+    expect(pages[0].title).toBe('Handbook');
+    expect(pages[0].url).toBe('https://wiki.example.com/Handbook/WebHome');
+    expect(pages[1].title).toBe('Docs');
+  });
+
+  it('URL-encodes the tag name', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ pageSummaries: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getPagesByTag('Project Management', 10);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/tags/Project%20Management');
+    expect(url).toContain('number=10');
+  });
+
+  it('returns empty array when no pages have the tag', async () => {
+    vi.stubGlobal('fetch', mockFetch({ pageSummaries: [] }));
+    const pages = await new XWikiClient().getPagesByTag('NonExistentTag');
+    expect(pages).toEqual([]);
+  });
+
+  it('throws XWikiError on non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 404, statusText: 'Not Found',
+      headers: { get: () => null },
+    }));
+    await expect(new XWikiClient().getPagesByTag('MissingTag')).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5: findPages
+// ---------------------------------------------------------------------------
+
+describe('findPages', () => {
+  it('returns pages filtered by space', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      pageSummaries: [
+        { id: 'xwiki:Sandbox.WebHome', fullName: 'Sandbox.WebHome', title: 'Sandbox Home', xwikiAbsoluteUrl: 'https://wiki.example.com/Sandbox/WebHome' },
+        { id: 'xwiki:Sandbox.TestPage1', fullName: 'Sandbox.TestPage1', title: 'Test Page 1', xwikiAbsoluteUrl: '' },
+      ],
+    }));
+
+    const pages = await new XWikiClient().findPages({ space: 'Sandbox' }, 50);
+    expect(pages).toHaveLength(2);
+    expect(pages[0].title).toBe('Sandbox Home');
+  });
+
+  it('deduplicates pages with the same fullName', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      pageSummaries: [
+        { id: 'xwiki:Sandbox.WebHome', fullName: 'Sandbox.WebHome', title: 'Home' },
+        { id: 'xwiki:Sandbox.WebHome', fullName: 'Sandbox.WebHome', title: 'Home' },
+        { id: 'xwiki:Sandbox.Other', fullName: 'Sandbox.Other', title: 'Other' },
+      ],
+    }));
+
+    const pages = await new XWikiClient().findPages({ space: 'Sandbox' });
+    expect(pages).toHaveLength(2);
+  });
+
+  it('passes name, space, and author params to the URL', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ pageSummaries: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().findPages({ name: 'WebHome', space: 'Main', author: 'XWiki.Admin' }, 25);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/wikis/xwiki/pages');
+    expect(url).toContain('name=WebHome');
+    expect(url).toContain('space=Main');
+    expect(url).toContain('author=XWiki.Admin');
+    expect(url).toContain('number=25');
+  });
+
+  it('omits undefined filter params', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ pageSummaries: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().findPages({ space: 'Sandbox' });
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('space=Sandbox');
+    expect(url).not.toContain('name=');
+    expect(url).not.toContain('author=');
+  });
+
+  it('throws XWikiError on error response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 500, statusText: 'Internal Server Error',
+      headers: { get: () => null },
+    }));
+    await expect(new XWikiClient().findPages({ space: 'Sandbox' })).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5: exportPage
+// ---------------------------------------------------------------------------
+
+describe('exportPage', () => {
+  it('returns ExportResult with base64 content and metadata', async () => {
+    const pdfBytes = new TextEncoder().encode('%PDF-1.4 fake content');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      arrayBuffer: () => Promise.resolve(pdfBytes.buffer),
+      headers: {
+        get: (key: string) => key === 'content-type' ? 'application/pdf;charset=UTF-8' : null,
+      },
+    }));
+
+    const result = await new XWikiClient().exportPage('Main', 'WebHome');
+
+    expect(result.space).toBe('Main');
+    expect(result.page).toBe('WebHome');
+    expect(result.format).toBe('pdf');
+    expect(result.content_type).toContain('application/pdf');
+    expect(result.size_bytes).toBeGreaterThan(0);
+    expect(result.content_base64).toBeTruthy();
+    // Verify base64 decode round-trips correctly
+    const decoded = Buffer.from(result.content_base64, 'base64').toString();
+    expect(decoded).toContain('%PDF');
+  });
+
+  it('calls the /bin/export/ action URL with format=pdf', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(10)),
+      headers: { get: () => 'application/pdf' },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().exportPage('Sandbox', 'TestPage');
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/bin/export/Sandbox/TestPage');
+    expect(url).toContain('format=pdf');
+    // Must NOT use REST path
+    expect(url).not.toContain('/rest/wikis');
+  });
+
+  it('throws XWikiError on non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 500, statusText: 'Internal Server Error',
+      headers: { get: () => null },
+    }));
+    await expect(new XWikiClient().exportPage('Main', 'WebHome')).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5: getObjectProperty
+// ---------------------------------------------------------------------------
+
+describe('getObjectProperty', () => {
+  // NOTE: single-property endpoint returns property at root level (name, value, type)
+  // NOT wrapped in a properties array — confirmed against xWiki 18.x live API.
+
+  it('returns the named property value from root-level response', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      name: 'UUID',
+      value: 'abc-123-def-456',
+      type: 'String',
+      attributes: [],
+    }));
+
+    const prop = await new XWikiClient().getObjectProperty('Main', 'WebHome', 'TDcode.UUIDClass', 0, 'UUID');
+    expect(prop.name).toBe('UUID');
+    expect(prop.value).toBe('abc-123-def-456');
+    expect(prop.type).toBe('String');
+  });
+
+  it('calls the correct single-property endpoint URL', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ name: 'status', value: 'active', type: 'String' }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getObjectProperty('Sandbox', 'MyPage', 'MyApp.MyClass', 2, 'status');
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/spaces/Sandbox/pages/MyPage/objects/MyApp.MyClass/2/properties/status');
+    expect(url).toContain('media=json');
+  });
+
+  it('throws XWikiError when response has no name or value (property not found)', async () => {
+    vi.stubGlobal('fetch', mockFetch({ links: [] }));
+    await expect(
+      new XWikiClient().getObjectProperty('Main', 'WebHome', 'MyClass', 0, 'nonexistent'),
+    ).rejects.toThrow(XWikiError);
+  });
+
+  it('throws XWikiError on 404 from server', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 404, statusText: 'Not Found',
+      headers: { get: () => null },
+    }));
+    await expect(
+      new XWikiClient().getObjectProperty('Main', 'WebHome', 'MyClass', 0, 'status'),
+    ).rejects.toThrow(XWikiError);
+  });
+
+  it('handles null property value gracefully', async () => {
+    vi.stubGlobal('fetch', mockFetch({ name: 'comment', value: null, type: 'TextArea' }));
+    const prop = await new XWikiClient().getObjectProperty('Main', 'WebHome', 'MyClass', 0, 'comment');
+    expect(prop.value).toBeNull();
+  });
+});

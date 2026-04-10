@@ -48,13 +48,20 @@ import { register as registerAdvancedSearch } from './tools/advanced-search.js';
 import { register as registerRenderPage } from './tools/render-page.js';
 import { register as registerGetRecentChanges } from './tools/get-recent-changes.js';
 
-const TOOL_COUNT = 28;
-const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 5 history/query/render';
+// Phase 5: Wiki tags, page finder, export, object property
+import { register as registerGetAllWikiTags } from './tools/get-all-wiki-tags.js';
+import { register as registerGetPagesByTag } from './tools/get-pages-by-tag.js';
+import { register as registerFindPages } from './tools/find-pages.js';
+import { register as registerExportPage } from './tools/export-page.js';
+import { register as registerGetObjectProperty } from './tools/get-object-property.js';
+
+const TOOL_COUNT = 33;
+const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 5 history/query/render, 5 wiki-level';
 
 async function buildServer(): Promise<McpServer> {
   const server = new McpServer({
     name: 'xwiki-mcp',
-    version: '0.4.0',
+    version: '0.5.0',
   });
 
   const client = new XWikiClient();
@@ -100,6 +107,13 @@ async function buildServer(): Promise<McpServer> {
   registerAdvancedSearch(server, client);
   registerRenderPage(server, client);
   registerGetRecentChanges(server, client);
+
+  // Phase 5 tools (5)
+  registerGetAllWikiTags(server, client);
+  registerGetPagesByTag(server, client);
+  registerFindPages(server, client);
+  registerExportPage(server, client);
+  registerGetObjectProperty(server, client);
 
   return server;
 }
@@ -152,7 +166,7 @@ async function main() {
     });
 
     httpServer.listen(httpPort, () => {
-      process.stderr.write(`xwiki-mcp v0.4.0 started in HTTP/SSE mode on port ${httpPort}\n`);
+      process.stderr.write(`xwiki-mcp v0.5.0 started in HTTP/SSE mode on port ${httpPort}\n`);
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
       process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
       process.stderr.write(`SSE endpoint: http://localhost:${httpPort}/sse\n`);
@@ -164,7 +178,7 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
-    process.stderr.write(`xwiki-mcp started (v0.4.0). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
+    process.stderr.write(`xwiki-mcp started (v0.5.0). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
     process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
   }
 }

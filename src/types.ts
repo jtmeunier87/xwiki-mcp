@@ -327,3 +327,61 @@ export interface RecentChange {
   modifier?: string;
   comment?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5: Tags (wiki-level), Wiki-wide Pages, Export, Object Property
+// ---------------------------------------------------------------------------
+
+export interface XWikiWikiTagRaw {
+  name: string;
+}
+
+export interface XWikiWikiTagsResponse {
+  tags: XWikiWikiTagRaw[];
+}
+
+// pages tagged with a specific tag share the pageSummaries shape
+export type XWikiTaggedPagesResponse = XWikiPagesResponse;
+
+// wiki-wide pages filter shares the pageSummaries shape
+export type XWikiWikiPagesResponse = XWikiPagesResponse;
+
+export interface XWikiObjectPropertyValueRaw {
+  name: string;
+  value?: unknown;
+  type?: string;
+  attributes?: Array<{ name: string; value: string }>;
+}
+
+/**
+ * Single-property endpoint returns the property directly at root level,
+ * NOT wrapped in a properties array.
+ */
+export interface XWikiObjectPropertyResponse {
+  name?: string;
+  value?: unknown;
+  type?: string;
+  attributes?: Array<{ name: string; value: string }>;
+}
+
+// Transformed Phase 5 output types
+
+export interface WikiTag {
+  name: string;
+}
+
+export interface ObjectProperty {
+  name: string;
+  value: unknown;
+  type?: string;
+}
+
+export interface ExportResult {
+  space: string;
+  page: string;
+  format: string;
+  /** base64-encoded file content */
+  content_base64: string;
+  content_type: string;
+  size_bytes: number;
+}
