@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from 'http';
 import { config } from './config.js';
 import { XWikiClient } from './client.js';
@@ -61,7 +61,7 @@ const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 5
 async function buildServer(): Promise<McpServer> {
   const server = new McpServer({
     name: 'xwiki-mcp',
-    version: '0.5.0',
+    version: '0.6.0',
   });
 
   const client = new XWikiClient();
@@ -122,54 +122,36 @@ async function main() {
   const httpPort = process.env['XWIKI_MCP_PORT'] ? parseInt(process.env['XWIKI_MCP_PORT'], 10) : undefined;
 
   if (httpPort) {
-    // HTTP/SSE transport mode
-    const server = await buildServer();
-
-    // Map of session ID -> SSEServerTransport for multi-client support
-    const transports = new Map<string, SSEServerTransport>();
-
+    // Streamable HTTP transport mode (stateless — one transport per request)
     const httpServer = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost:${httpPort}`);
 
-      if (req.method === 'GET' && url.pathname === '/sse') {
-        // SSE connection endpoint — establish a new MCP session
-        const transport = new SSEServerTransport('/message', res);
-        transports.set(transport.sessionId, transport);
-
-        transport.onclose = () => {
-          transports.delete(transport.sessionId);
-        };
-
-        await server.connect(transport);
-
-      } else if (req.method === 'POST' && url.pathname === '/message') {
-        // Client message endpoint
-        const sessionId = url.searchParams.get('sessionId');
-        const transport = sessionId ? transports.get(sessionId) : undefined;
-
-        if (!transport) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('Session not found');
-          return;
-        }
-
-        await transport.handlePostMessage(req, res);
-
-      } else if (url.pathname === '/health') {
+      if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', version: '0.4.0', tools: TOOL_COUNT }));
-
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not found. Available endpoints: GET /sse, POST /message, GET /health');
+        res.end(JSON.stringify({ status: 'ok', version: '0.6.0', tools: TOOL_COUNT }));
+        return;
       }
+
+      if (url.pathname === '/mcp') {
+        // One transport + server instance per request (stateless)
+        const server = await buildServer();
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined, // stateless
+        });
+        await server.connect(transport);
+        await transport.handleRequest(req, res);
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found. Available endpoints: POST /mcp, GET /health');
     });
 
     httpServer.listen(httpPort, () => {
-      process.stderr.write(`xwiki-mcp v0.5.0 started in HTTP/SSE mode on port ${httpPort}\n`);
+      process.stderr.write(`xwiki-mcp v0.6.0 started in Streamable HTTP mode on port ${httpPort}\n`);
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
       process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
-      process.stderr.write(`SSE endpoint: http://localhost:${httpPort}/sse\n`);
+      process.stderr.write(`MCP endpoint: http://localhost:${httpPort}/mcp\n`);
     });
 
   } else {
@@ -178,7 +160,7 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
-    process.stderr.write(`xwiki-mcp started (v0.5.0). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
+    process.stderr.write(`xwiki-mcp v0.6.0 started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
     process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
   }
 }
