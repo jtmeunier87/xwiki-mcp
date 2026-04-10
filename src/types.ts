@@ -103,6 +103,69 @@ export interface XWikiCommentsResponse {
   comments: XWikiCommentRaw[];
 }
 
+// Phase 2: Tags
+
+export interface XWikiTagRaw {
+  name: string;
+}
+
+export interface XWikiTagsResponse {
+  tags: XWikiTagRaw[];
+}
+
+// Phase 3: Classes and Objects
+
+export interface XWikiClassPropertyRaw {
+  name: string;
+  type?: string;
+  value?: unknown;
+  attributes?: Array<{ name: string; value: string }>;
+}
+
+export interface XWikiClassRaw {
+  id: string;
+  name: string;
+  properties?: XWikiClassPropertyRaw[];
+}
+
+export interface XWikiClassesResponse {
+  // xWiki uses the (typo) key 'clazzs' in the REST API response
+  clazzs: XWikiClassRaw[];
+}
+
+export interface XWikiObjectPropertyRaw {
+  name: string;
+  value?: unknown;
+  type?: string;
+}
+
+export interface XWikiObjectRaw {
+  id?: string;
+  guid?: string;
+  className: string;
+  number: number;
+  pageName?: string;
+  pageId?: string;
+  wiki?: string;
+  properties?: XWikiObjectPropertyRaw[];
+  xwikiAbsoluteUrl?: string;
+}
+
+export interface XWikiObjectSummaryRaw {
+  id?: string;
+  guid?: string;
+  className: string;
+  number: number;
+  pageName?: string;
+  pageId?: string;
+  xwikiAbsoluteUrl?: string;
+}
+
+export interface XWikiObjectsResponse {
+  objectSummaries?: XWikiObjectSummaryRaw[];
+  objects?: XWikiObjectRaw[];
+}
+
 // Transformed output types (what tools return)
 
 export interface Space {
@@ -147,6 +210,14 @@ export interface Attachment {
   download_url: string;
 }
 
+export interface AttachmentWriteResult {
+  name: string;
+  size_bytes?: number;
+  mime_type?: string;
+  url: string;
+  status: string;
+}
+
 export interface Comment {
   id?: number;
   author?: string;
@@ -167,4 +238,37 @@ export interface Pagination {
   start: number;
   limit: number;
   has_more: boolean;
+}
+
+// Phase 2: Tags
+
+export interface Tag {
+  name: string;
+}
+
+// Phase 3: Classes and Objects
+
+export interface XWikiClass {
+  id: string;
+  name: string;
+  property_count: number;
+  properties: Array<{
+    name: string;
+    type?: string;
+  }>;
+}
+
+export interface XWikiObject {
+  class_name: string;
+  number: number;
+  page_id?: string;
+  url?: string;
+  properties: Record<string, unknown>;
+}
+
+export interface XWikiObjectWriteResult {
+  class_name: string;
+  number: number;
+  url?: string;
+  status: string;
 }

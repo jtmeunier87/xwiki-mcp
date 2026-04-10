@@ -5,16 +5,27 @@ import type {
   XWikiPageRaw,
   XWikiSearchResponse,
   XWikiAttachmentsResponse,
+  XWikiAttachmentRaw,
   XWikiCommentsResponse,
   XWikiCommentRaw,
+  XWikiTagsResponse,
+  XWikiClassesResponse,
+  XWikiClassRaw,
+  XWikiObjectsResponse,
+  XWikiObjectRaw,
   Space,
   PageSummary,
   Page,
   PageWriteResult,
+  AttachmentWriteResult,
   SearchResult,
   Attachment,
   Comment,
   Pagination,
+  Tag,
+  XWikiClass,
+  XWikiObject,
+  XWikiObjectWriteResult,
 } from './types.js';
 
 export class XWikiError extends Error {
@@ -107,7 +118,7 @@ export class XWikiClient {
    * Send a mutating request (PUT, POST, DELETE) to the xWiki REST API.
    * Includes CSRF token handling and automatic retry on 403 (stale token).
    */
-  private async mutate(method: 'PUT' | 'POST' | 'DELETE', path: string, body?: string, contentType?: string): Promise<Response> {
+  private async mutate(method: 'PUT' | 'POST' | 'DELETE', path: string, body?: string | Buffer, contentType?: string): Promise<Response> {
     const url = new URL(`${this.wikiBase}${path}`);
     url.searchParams.set('media', 'json');
 
@@ -125,8 +136,8 @@ export class XWikiClient {
       response = await fetch(url.toString(), {
         method,
         headers,
-        body: body ?? undefined,
-        signal: AbortSignal.timeout(30_000),
+        body: body as BodyInit ?? undefined,
+        signal: AbortSignal.timeout(60_000),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -142,8 +153,8 @@ export class XWikiClient {
           response = await fetch(url.toString(), {
             method,
             headers,
-            body: body ?? undefined,
-            signal: AbortSignal.timeout(30_000),
+            body: body as BodyInit ?? undefined,
+            signal: AbortSignal.timeout(60_000),
           });
         } catch {
           throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -422,6 +433,293 @@ export class XWikiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Phase 2: Attachments (upload / download / delete)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Upload a file as an attachment to a page.
+   * content_base64: base64-encoded file bytes.
+   */
+  async uploadAttachment(
+    space: string,
+    page: string,
+    filename: string,
+    contentBase64: string,
+    mimeType: string,
+  ): Promise<AttachmentWriteResult> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/attachments/${encodeURIComponent(filename)}`;
+    const bytes = Buffer.from(contentBase64, 'base64');
+    const response = await this.mutate('PUT', path, bytes, mimeType);
+
+    try {
+      const data = await response.json() as XWikiAttachmentRaw;
+      return {
+        name: data.name ?? filename,
+        size_bytes: data.longSize ?? data.size,
+        mime_type: data.mimeType ?? mimeType,
+        url: data.xwikiAbsoluteUrl ?? '',
+        status: 'uploaded',
+      };
+    } catch {
+      return { name: filename, mime_type: mimeType, url: '', status: 'uploaded' };
+    }
+  }
+
+  /**
+   * Download an attachment from a page, returning its content as base64.
+   */
+  async downloadAttachment(
+    space: string,
+    page: string,
+    filename: string,
+  ): Promise<{ name: string; content_base64: string; mime_type?: string; size_bytes: number }> {
+    // Build the direct download URL (not through REST path — attachments served via /bin/download)
+    const spaceParts = space.split('.').map(s => encodeURIComponent(s)).join('/');
+    const downloadUrl = `${config.baseUrl}/bin/download/${spaceParts}/${encodeURIComponent(page)}/${encodeURIComponent(filename)}`;
+
+    let response: Response;
+    try {
+      response = await fetch(downloadUrl, {
+        headers: { ...this.authHeaders() },
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}.`);
+    }
+
+    if (response.status === 404) throw new XWikiError(`Attachment not found: ${filename}`, 404);
+    if (response.status === 401 || response.status === 403) throw new XWikiError('Authentication error downloading attachment.', response.status);
+    if (!response.ok) throw new XWikiError(`Failed to download attachment: ${response.status}`, response.status);
+
+    const buffer = await response.arrayBuffer();
+    const content_base64 = Buffer.from(buffer).toString('base64');
+    return {
+      name: filename,
+      content_base64,
+      mime_type: response.headers.get('content-type') ?? undefined,
+      size_bytes: buffer.byteLength,
+    };
+  }
+
+  /**
+   * Delete an attachment from a page.
+   */
+  async deleteAttachment(space: string, page: string, filename: string): Promise<{ status: string }> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/attachments/${encodeURIComponent(filename)}`;
+    await this.mutate('DELETE', path);
+    return { status: 'deleted' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 2: Tags
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get all tags on a page.
+   */
+  async getTags(space: string, page: string): Promise<Tag[]> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/tags`;
+    const data = await this.get<XWikiTagsResponse>(path);
+    return (data.tags ?? []).map(t => ({ name: t.name }));
+  }
+
+  /**
+   * Add tags to a page. Replaces the full tag set — fetches existing tags first
+   * and merges with the new ones to avoid removing existing tags.
+   */
+  async addTags(space: string, page: string, tags: string[]): Promise<Tag[]> {
+    // Fetch existing tags to preserve them
+    const existing = await this.getTags(space, page);
+    const existingNames = new Set(existing.map(t => t.name));
+    const merged = [...existing.map(t => t.name), ...tags.filter(t => !existingNames.has(t))];
+
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/tags`;
+
+    // xWiki expects a tags XML document with the full new tag set
+    const tagElements = merged.map(t => `  <tag><name>${this.escapeXml(t)}</name></tag>`).join('\n');
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<tags xmlns="http://www.xwiki.org">\n${tagElements}\n</tags>`;
+
+    await this.mutate('PUT', path, xml, 'application/xml');
+    return merged.map(name => ({ name }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 3: Classes
+  // ---------------------------------------------------------------------------
+
+  /**
+   * List all XWiki classes defined in the wiki.
+   */
+  async listClasses(start: number, limit: number): Promise<{ classes: XWikiClass[]; pagination: Pagination }> {
+    const data = await this.get<XWikiClassesResponse>('/classes', { start, number: limit });
+    // xWiki REST API uses the key 'clazzs' (intentional typo in the API)
+    const raw = data.clazzs ?? [];
+    const classes = raw.map((c: XWikiClassRaw) => ({
+      id: c.id,
+      name: c.name,
+      property_count: (c.properties ?? []).length,
+      properties: (c.properties ?? []).map(p => ({ name: p.name, type: p.type })),
+    }));
+    return {
+      classes,
+      pagination: {
+        start,
+        limit,
+        has_more: classes.length === limit,
+      },
+    };
+  }
+
+  /**
+   * Get details of a single XWiki class including all its properties.
+   */
+  async getClass(className: string): Promise<XWikiClass> {
+    const path = `/classes/${encodeURIComponent(className)}`;
+    const data = await this.get<XWikiClassRaw>(path);
+    return {
+      id: data.id,
+      name: data.name,
+      property_count: (data.properties ?? []).length,
+      properties: (data.properties ?? []).map(p => ({ name: p.name, type: p.type })),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 3: Objects
+  // ---------------------------------------------------------------------------
+
+  /**
+   * List all objects on a page, optionally filtered by class name.
+   */
+  async listObjects(
+    space: string,
+    page: string,
+    className?: string,
+  ): Promise<XWikiObject[]> {
+    const basePath = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects`;
+    const path = className ? `${basePath}/${encodeURIComponent(className)}` : basePath;
+    const data = await this.get<XWikiObjectsResponse>(path);
+    const items = data.objectSummaries ?? data.objects ?? [];
+    return items.map((o: XWikiObjectRaw) => ({
+      class_name: o.className,
+      number: o.number,
+      page_id: o.pageId,
+      url: o.xwikiAbsoluteUrl,
+      properties: this.flattenObjectProperties(o.properties),
+    }));
+  }
+
+  /**
+   * Get a single object by class name and object number.
+   */
+  async getObject(space: string, page: string, className: string, objectNumber: number): Promise<XWikiObject> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}`;
+    const data = await this.get<XWikiObjectRaw>(path);
+    return {
+      class_name: data.className,
+      number: data.number,
+      page_id: data.pageId,
+      url: data.xwikiAbsoluteUrl,
+      properties: this.flattenObjectProperties(data.properties),
+    };
+  }
+
+  /**
+   * Create a new object of a given class on a page.
+   * properties: key-value map of property names to values.
+   */
+  async createObject(
+    space: string,
+    page: string,
+    className: string,
+    properties: Record<string, string>,
+  ): Promise<XWikiObjectWriteResult> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects`;
+
+    const propElements = Object.entries(properties)
+      .map(([name, value]) =>
+        `  <property><name>${this.escapeXml(name)}</name><value>${this.escapeXml(value)}</value></property>`)
+      .join('\n');
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<object xmlns="http://www.xwiki.org">',
+      `  <className>${this.escapeXml(className)}</className>`,
+      '  <properties>',
+      propElements,
+      '  </properties>',
+      '</object>',
+    ].join('\n');
+
+    const response = await this.mutate('POST', path, xml, 'application/xml');
+
+    try {
+      const data = await response.json() as XWikiObjectRaw;
+      return {
+        class_name: data.className ?? className,
+        number: data.number ?? 0,
+        url: data.xwikiAbsoluteUrl,
+        status: 'created',
+      };
+    } catch {
+      return { class_name: className, number: 0, status: 'created' };
+    }
+  }
+
+  /**
+   * Update an existing object's properties by class name and object number.
+   * Only the provided properties are sent — existing unspecified properties are preserved by xWiki.
+   */
+  async updateObject(
+    space: string,
+    page: string,
+    className: string,
+    objectNumber: number,
+    properties: Record<string, string>,
+  ): Promise<XWikiObjectWriteResult> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}`;
+
+    const propElements = Object.entries(properties)
+      .map(([name, value]) =>
+        `  <property><name>${this.escapeXml(name)}</name><value>${this.escapeXml(value)}</value></property>`)
+      .join('\n');
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<object xmlns="http://www.xwiki.org">',
+      `  <className>${this.escapeXml(className)}</className>`,
+      `  <number>${objectNumber}</number>`,
+      '  <properties>',
+      propElements,
+      '  </properties>',
+      '</object>',
+    ].join('\n');
+
+    const response = await this.mutate('PUT', path, xml, 'application/xml');
+
+    try {
+      const data = await response.json() as XWikiObjectRaw;
+      return {
+        class_name: data.className ?? className,
+        number: data.number ?? objectNumber,
+        url: data.xwikiAbsoluteUrl,
+        status: 'updated',
+      };
+    } catch {
+      return { class_name: className, number: objectNumber, status: 'updated' };
+    }
+  }
+
+  /**
+   * Delete an object from a page by class name and object number.
+   */
+  async deleteObject(space: string, page: string, className: string, objectNumber: number): Promise<{ status: string }> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}`;
+    await this.mutate('DELETE', path);
+    return { status: 'deleted' };
+  }
+
+  // ---------------------------------------------------------------------------
   // Utility
   // ---------------------------------------------------------------------------
 
@@ -433,5 +731,11 @@ export class XWikiClient {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  /** Flatten xWiki object properties array into a plain key-value record */
+  private flattenObjectProperties(properties?: Array<{ name: string; value?: unknown }>): Record<string, unknown> {
+    if (!properties) return {};
+    return Object.fromEntries(properties.map(p => [p.name, p.value ?? null]));
   }
 }
