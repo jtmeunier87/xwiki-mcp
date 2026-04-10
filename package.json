@@ -1,5 +1,5 @@
 {
-  "name": "xwiki-mcp",
+  "name": "@jtmeunier87/xwiki-mcp",
   "version": "0.5.0",
   "description": "MCP server for XWiki REST API",
   "type": "module",
@@ -26,9 +26,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/vitos73/xwiki-mcp.git"
+    "url": "https://github.com/jtmeunier87/xwiki-mcp.git"
   },
-  "homepage": "https://github.com/vitos73/xwiki-mcp",
+  "homepage": "https://github.com/jtmeunier87/xwiki-mcp",
   "license": "MIT",
   "engines": {
     "node": ">=18"
