@@ -13,6 +13,9 @@ import type {
   XWikiClassRaw,
   XWikiObjectsResponse,
   XWikiObjectRaw,
+  XWikiHistoryResponse,
+  XWikiPageVersionRaw,
+  XWikiQueryResponse,
   Space,
   PageSummary,
   Page,
@@ -26,6 +29,10 @@ import type {
   XWikiClass,
   XWikiObject,
   XWikiObjectWriteResult,
+  HistorySummary,
+  QueryResult,
+  RenderResult,
+  RecentChange,
 } from './types.js';
 
 export class XWikiError extends Error {
@@ -722,8 +729,111 @@ export class XWikiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // Phase 4: History, Query, Render, Recent Changes
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get the revision history of a page.
+   * Endpoint: GET /spaces/{space}/pages/{page}/history?number=N
+   */
+  async getPageHistory(space: string, page: string, limit = 20): Promise<HistorySummary[]> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/history`;
+    const data = await this.get<XWikiHistoryResponse>(path, { number: limit });
+    const summaries = data.historySummaries ?? [];
+    return summaries.map(h => ({
+      version: h.version,
+      modified_date: h.modified ? this.parseTimestamp(h.modified) : undefined,
+      modifier: h.modifier ? h.modifier.replace(/^xwiki:XWiki\./, '') : undefined,
+      comment: h.comment || undefined,
+    }));
+  }
+
+  /**
+   * Get a page at a specific historical version.
+   * Endpoint: GET /spaces/{space}/pages/{page}/history/{version}
+   */
+  async getPageVersion(space: string, page: string, version: string): Promise<Page> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/history/${encodeURIComponent(version)}`;
+    const data = await this.get<XWikiPageVersionRaw>(path);
+    return {
+      title: data.title ?? page,
+      content: data.content ?? '',
+      syntax: data.syntax ?? 'xwiki/2.1',
+      author: data.author,
+      modified_date: data.modified ? this.parseTimestamp(data.modified) : undefined,
+      version: data.version,
+      parent: data.parent,
+      url: data.xwikiAbsoluteUrl ?? '',
+    };
+  }
+
+  /**
+   * Run an HQL or XWQL query against the wiki.
+   * Endpoint: GET /wikis/xwiki/query?q=...&type=hql|xwql&number=N
+   * Note: q should be just the WHERE clause — xWiki prepends SELECT.
+   * Example: "where doc.space = 'Main'" (HQL) or "where doc.author = 'XWiki.PercyProcess'" (XWQL)
+   */
+  async advancedSearch(query: string, type: 'hql' | 'xwql' | 'solr' = 'xwql', limit = 20, start = 0): Promise<QueryResult[]> {
+    // '/query' is relative to wikiBase (which is already .../wikis/xwiki)
+    const data = await this.get<XWikiQueryResponse>('/query', { q: query, type, number: limit, start });
+    const results = data.searchResults ?? [];
+    return results.map(r => ({
+      page_full_name: r.pageFullName ?? r.id ?? '',
+      title: r.title,
+      space: r.space,
+      url: (r.hierarchy?.items?.[r.hierarchy.items.length - 1]?.url) ?? undefined,
+    }));
+  }
+
+  /**
+   * Render a page to plain text or HTML.
+   * Uses the xWiki action URL (not REST): /bin/get/{space}/{page}?outputSyntax=...
+   * syntax: 'plain' | 'html' (default: 'plain')
+   */
+  async renderPage(space: string, page: string, syntax: 'plain' | 'html' = 'plain'): Promise<RenderResult> {
+    const outputSyntax = syntax === 'html' ? 'annotatedhtmlmacros' : 'plain';
+    // Action URLs use the original (non-REST) path pattern
+    const actionUrl = `${config.baseUrl}/bin/get/${encodeURIComponent(space)}/${encodeURIComponent(page)}`;
+    const url = new URL(actionUrl);
+    url.searchParams.set('outputSyntax', outputSyntax);
+    if (syntax === 'plain') {
+      url.searchParams.set('xpage', 'plain');
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: { Accept: 'text/plain, text/html', ...this.authHeaders() },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new XWikiError(`renderPage failed: ${response.statusText}`, response.status);
+
+    const content = await response.text();
+    return { space, page, syntax, content };
+  }
+
+  /**
+   * Get recent changes across the entire wiki.
+   * Endpoint: GET /wikis/xwiki/modifications?number=N
+   */
+  async getRecentChanges(limit = 20): Promise<RecentChange[]> {
+    const data = await this.get<XWikiHistoryResponse>('/modifications', { number: limit });
+    const summaries = data.historySummaries ?? [];
+    return summaries.map(h => ({
+      version: h.version,
+      modified_date: h.modified ? this.parseTimestamp(h.modified) : undefined,
+      modifier: h.modifier ? h.modifier.replace(/^xwiki:XWiki\./, '') : undefined,
+      comment: h.comment || undefined,
+    }));
+  }
+
+  // ---------------------------------------------------------------------------
   // Utility
   // ---------------------------------------------------------------------------
+
+  /** Convert a Unix ms timestamp or ISO string to an ISO date string */
+  private parseTimestamp(v: number | string): string {
+    if (typeof v === 'number') return new Date(v).toISOString();
+    return v;
+  }
 
   /** Escape special XML characters in content */
   private escapeXml(s: string): string {

@@ -272,3 +272,58 @@ export interface XWikiObjectWriteResult {
   url?: string;
   status: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4: History, Query, Render, Recent Changes
+// ---------------------------------------------------------------------------
+
+export interface XWikiHistorySummaryRaw {
+  version: string;
+  /** Unix millisecond timestamp or ISO string */
+  modified?: number | string;
+  modifier?: string;
+  comment?: string;
+}
+
+export interface XWikiHistoryResponse {
+  historySummaries: XWikiHistorySummaryRaw[];
+}
+
+/** Full page at a specific version — same shape as XWikiPageRaw */
+export type XWikiPageVersionRaw = XWikiPageRaw;
+
+/** Query endpoint response — shares structure with search */
+export interface XWikiQueryResponse {
+  searchResults: XWikiSearchResultRaw[];
+  totalResults?: number;
+}
+
+// Transformed Phase 4 output types
+
+export interface HistorySummary {
+  version: string;
+  modified_date?: string;
+  modifier?: string;
+  comment?: string;
+}
+
+export interface QueryResult {
+  page_full_name: string;
+  title?: string;
+  space?: string;
+  url?: string;
+}
+
+export interface RenderResult {
+  space: string;
+  page: string;
+  syntax: string;
+  content: string;
+}
+
+export interface RecentChange {
+  version: string;
+  modified_date?: string;
+  modifier?: string;
+  comment?: string;
+}

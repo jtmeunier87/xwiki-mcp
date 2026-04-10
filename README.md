@@ -2,13 +2,13 @@
 
 A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), providing AI agents with full read/write access to an XWiki instance via its REST API.
 
-**Fork of [vitos73/xwiki-mcp](https://github.com/vitos73/xwiki-mcp)** — extended with write operations, attachment management, tag management, and XObject/class CRUD.
+**Fork of [vitos73/xwiki-mcp](https://github.com/vitos73/xwiki-mcp)** — extended with write operations, attachment management, tag management, XObject/class CRUD, page history, advanced query (HQL/XWQL/Solr), page rendering, recent changes tracking, and HTTP/SSE transport.
 
 ---
 
 ## Features
 
-### 23 Tools across 4 categories
+### 28 Tools across 6 categories
 
 | Category | Tools |
 |---|---|
@@ -18,6 +18,7 @@ A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), provi
 | **Tags** | `get_tags`, `add_tags` |
 | **Classes** | `list_classes`, `get_class` |
 | **Objects (XObjects)** | `list_objects`, `get_object`, `create_object`, `update_object`, `delete_object` |
+| **History & Query** | `get_page_history`, `get_page_version`, `advanced_search`, `render_page`, `get_recent_changes` |
 
 ### Key implementation notes
 
@@ -26,6 +27,8 @@ A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), provi
 - **Nested space support**: Space names use dot notation (`Space.SubSpace.Child`) which the client converts to xWiki's `/spaces/X/spaces/Y/` URL path format
 - **xWiki API typo**: The classes endpoint returns `clazzs` (not `classes`) — the client handles this transparently
 - **Binary attachments**: Upload/download uses `Buffer` for binary content, with base64 encoding at the tool boundary
+- **Render endpoint**: Uses the xWiki action URL (`/bin/get/`) rather than the REST API — required for proper macro/template rendering
+- **HTTP/SSE transport**: Set `XWIKI_MCP_PORT` to expose a server-sent events endpoint (for multi-client HTTP usage)
 
 ---
 
@@ -62,6 +65,26 @@ Add to your MCP config (`.cursor/mcp.json` or Claude Desktop `config.json`):
 | `XWIKI_PASSWORD` | If basic | — | xWiki password |
 | `XWIKI_TOKEN` | If token | — | Bearer token (xWiki API tokens require 15.4+) |
 | `XWIKI_WIKI_NAME` | No | `xwiki` | Wiki name (default wiki is always `xwiki`) |
+| `XWIKI_MCP_PORT` | No | — | If set, starts HTTP/SSE transport on this port instead of stdio |
+
+---
+
+## HTTP/SSE Transport
+
+By default the server runs in stdio mode (for use with Claude Desktop / Cursor). To expose an HTTP server for multi-client or remote usage:
+
+```bash
+XWIKI_MCP_PORT=3001 \
+XWIKI_BASE_URL=https://your-wiki.com \
+XWIKI_USERNAME=YourUser \
+XWIKI_PASSWORD=YourPassword \
+node dist/index.js
+```
+
+Endpoints:
+- `GET /sse` — SSE connection endpoint (MCP clients connect here)
+- `POST /message?sessionId=...` — Message send endpoint
+- `GET /health` — Health check (returns version and tool count)
 
 ---
 
@@ -161,6 +184,33 @@ Update properties of an existing object. Only specified properties are modified.
 #### `delete_object`
 Delete an object by class name and number.
 
+### History & Query Tools (Phase 4)
+
+#### `get_page_history`
+Get the revision history of a page — versions, timestamps, authors, and edit comments.
+- `space`: space name
+- `page`: page name
+- `limit`: max entries (default 20)
+
+#### `get_page_version`
+Retrieve the full content of a page at a specific historical version.
+- `version`: version string, e.g. `3.1` or `1.1` (use `get_page_history` to find available versions)
+
+#### `advanced_search`
+Run a structured HQL, XWQL, or Solr query against the wiki.
+- `query`: For `hql`/`xwql`: the WHERE clause only (e.g. `where doc.space = 'Main'`). For `solr`: full Solr expression.
+- `type`: `hql` | `xwql` (default) | `solr`
+- `limit`: max results (default 20)
+- `start`: pagination offset (default 0)
+
+#### `render_page`
+Render a wiki page through the xWiki rendering engine to plain text or HTML. Especially useful for pages with macros.
+- `output`: `plain` (default) | `html`
+
+#### `get_recent_changes`
+Get the most recent page modifications across the entire wiki. Useful for activity monitoring and change audits.
+- `limit`: number of changes (default 20)
+
 ---
 
 ## Development
@@ -170,7 +220,7 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test
+npm test   # 53 tests
 ```
 
 ### Running Locally
@@ -187,9 +237,10 @@ node dist/index.js
 ## Roadmap
 
 - [x] Phase 1: Core write operations (create/update/delete page, comments)
+- [x] Phase 1.5: Docker secrets management, live validation
 - [x] Phase 2: Attachments (upload/download/delete), tags
 - [x] Phase 3: XObject CRUD, class listing
-- [ ] Phase 4: Page history, advanced search (HQL/XWQL), HTTP/SSE transport
+- [x] Phase 4: Page history, advanced search (HQL/XWQL/Solr), render_page, recent changes, HTTP/SSE transport
 
 ---
 

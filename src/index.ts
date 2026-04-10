@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { createServer } from 'http';
 import { config } from './config.js';
 import { XWikiClient } from './client.js';
 
@@ -39,10 +41,20 @@ import { register as registerCreateObject } from './tools/create-object.js';
 import { register as registerUpdateObject } from './tools/update-object.js';
 import { register as registerDeleteObject } from './tools/delete-object.js';
 
-async function main() {
+// Phase 4: History, Query, Render, Recent Changes
+import { register as registerGetPageHistory } from './tools/get-page-history.js';
+import { register as registerGetPageVersion } from './tools/get-page-version.js';
+import { register as registerAdvancedSearch } from './tools/advanced-search.js';
+import { register as registerRenderPage } from './tools/render-page.js';
+import { register as registerGetRecentChanges } from './tools/get-recent-changes.js';
+
+const TOOL_COUNT = 28;
+const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 5 history/query/render';
+
+async function buildServer(): Promise<McpServer> {
   const server = new McpServer({
     name: 'xwiki-mcp',
-    version: '0.3.0',
+    version: '0.4.0',
   });
 
   const client = new XWikiClient();
@@ -82,11 +94,79 @@ async function main() {
   registerUpdateObject(server, client);
   registerDeleteObject(server, client);
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  // Phase 4 tools (5)
+  registerGetPageHistory(server, client);
+  registerGetPageVersion(server, client);
+  registerAdvancedSearch(server, client);
+  registerRenderPage(server, client);
+  registerGetRecentChanges(server, client);
 
-  process.stderr.write(`xwiki-mcp started (v0.3.0). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
-  process.stderr.write(`Registered 23 tools (6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object)\n`);
+  return server;
+}
+
+async function main() {
+  const httpPort = process.env['XWIKI_MCP_PORT'] ? parseInt(process.env['XWIKI_MCP_PORT'], 10) : undefined;
+
+  if (httpPort) {
+    // HTTP/SSE transport mode
+    const server = await buildServer();
+
+    // Map of session ID -> SSEServerTransport for multi-client support
+    const transports = new Map<string, SSEServerTransport>();
+
+    const httpServer = createServer(async (req, res) => {
+      const url = new URL(req.url ?? '/', `http://localhost:${httpPort}`);
+
+      if (req.method === 'GET' && url.pathname === '/sse') {
+        // SSE connection endpoint — establish a new MCP session
+        const transport = new SSEServerTransport('/message', res);
+        transports.set(transport.sessionId, transport);
+
+        transport.onclose = () => {
+          transports.delete(transport.sessionId);
+        };
+
+        await server.connect(transport);
+
+      } else if (req.method === 'POST' && url.pathname === '/message') {
+        // Client message endpoint
+        const sessionId = url.searchParams.get('sessionId');
+        const transport = sessionId ? transports.get(sessionId) : undefined;
+
+        if (!transport) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Session not found');
+          return;
+        }
+
+        await transport.handlePostMessage(req, res);
+
+      } else if (url.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', version: '0.4.0', tools: TOOL_COUNT }));
+
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not found. Available endpoints: GET /sse, POST /message, GET /health');
+      }
+    });
+
+    httpServer.listen(httpPort, () => {
+      process.stderr.write(`xwiki-mcp v0.4.0 started in HTTP/SSE mode on port ${httpPort}\n`);
+      process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
+      process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
+      process.stderr.write(`SSE endpoint: http://localhost:${httpPort}/sse\n`);
+    });
+
+  } else {
+    // Default stdio transport mode
+    const server = await buildServer();
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+
+    process.stderr.write(`xwiki-mcp started (v0.4.0). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
+    process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
+  }
 }
 
 main().catch(err => {

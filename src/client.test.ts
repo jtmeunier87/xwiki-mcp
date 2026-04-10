@@ -556,3 +556,332 @@ describe('deleteObject', () => {
     expect(opts.method).toBe('DELETE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 4: getPageHistory
+// ---------------------------------------------------------------------------
+
+describe('getPageHistory', () => {
+  it('returns formatted history with parsed timestamps and stripped modifier prefix', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      historySummaries: [
+        { version: '19.1', modified: 1712000000000, modifier: 'xwiki:XWiki.JohnMeunier', comment: 'Updated intro' },
+        { version: '18.1', modified: 1711900000000, modifier: 'xwiki:XWiki.PercyProcess', comment: '' },
+      ],
+    }));
+
+    const client = new XWikiClient();
+    const history = await client.getPageHistory('Main', 'WebHome', 10);
+
+    expect(history).toHaveLength(2);
+    expect(history[0].version).toBe('19.1');
+    expect(history[0].modifier).toBe('JohnMeunier');
+    expect(history[0].modified_date).toBe(new Date(1712000000000).toISOString());
+    expect(history[0].comment).toBe('Updated intro');
+    // Empty comment should be undefined
+    expect(history[1].comment).toBeUndefined();
+    expect(history[1].modifier).toBe('PercyProcess');
+  });
+
+  it('calls the correct history endpoint URL with limit', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ historySummaries: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getPageHistory('Sandbox', 'TestPage', 5);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/spaces/Sandbox/pages/TestPage/history');
+    expect(url).toContain('number=5');
+    expect(url).toContain('media=json');
+  });
+
+  it('throws XWikiError on non-OK response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 404, statusText: 'Not Found',
+      headers: { get: () => null },
+    }));
+
+    await expect(new XWikiClient().getPageHistory('Missing', 'Page')).rejects.toThrow(XWikiError);
+  });
+
+  it('returns empty array when historySummaries is missing', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const history = await new XWikiClient().getPageHistory('Main', 'WebHome');
+    expect(history).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4: getPageVersion
+// ---------------------------------------------------------------------------
+
+describe('getPageVersion', () => {
+  it('returns page content at a specific version', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      title: 'Administration Hub',
+      content: 'Initial content',
+      syntax: 'xwiki/2.1',
+      author: 'XWiki.JohnMeunier',
+      modified: 1711500000000,
+      version: '1.1',
+      xwikiAbsoluteUrl: 'https://wiki.example.com/Main/AdminHub',
+    }));
+
+    const client = new XWikiClient();
+    const page = await client.getPageVersion('Main', 'AdminHub', '1.1');
+
+    expect(page.title).toBe('Administration Hub');
+    expect(page.version).toBe('1.1');
+    expect(page.content).toBe('Initial content');
+    expect(page.modified_date).toBe(new Date(1711500000000).toISOString());
+    expect(page.url).toBe('https://wiki.example.com/Main/AdminHub');
+  });
+
+  it('calls the correct versioned URL', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ title: 'T', content: '', syntax: 'xwiki/2.1' }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getPageVersion('Sandbox', 'MyPage', '3.2');
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/spaces/Sandbox/pages/MyPage/history/3.2');
+    expect(url).toContain('media=json');
+  });
+
+  it('throws XWikiError on 404', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 404, statusText: 'Not Found',
+      headers: { get: () => null },
+    }));
+
+    await expect(new XWikiClient().getPageVersion('Main', 'Page', '99.1')).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4: advancedSearch
+// ---------------------------------------------------------------------------
+
+describe('advancedSearch', () => {
+  it('returns query results mapped to QueryResult shape', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      searchResults: [
+        { id: 'xwiki:Main.WebHome', pageFullName: 'Main.WebHome', title: 'Home', space: 'Main' },
+        { id: 'xwiki:Sandbox.TestPage', pageFullName: 'Sandbox.TestPage', title: 'Test', space: 'Sandbox' },
+      ],
+    }));
+
+    const client = new XWikiClient();
+    const results = await client.advancedSearch("where doc.space = 'Main'", 'hql', 10);
+
+    expect(results).toHaveLength(2);
+    expect(results[0].page_full_name).toBe('Main.WebHome');
+    expect(results[0].title).toBe('Home');
+    expect(results[0].space).toBe('Main');
+  });
+
+  it('builds the correct query URL for xwql type', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ searchResults: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().advancedSearch("where doc.author = 'XWiki.PercyProcess'", 'xwql', 20, 0);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/wikis/xwiki/query');
+    expect(url).toContain('type=xwql');
+    expect(url).toContain('number=20');
+    expect(url).toContain('media=json');
+  });
+
+  it('defaults to xwql type when not specified', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ searchResults: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().advancedSearch("where doc.space = 'Sandbox'");
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('type=xwql');
+  });
+
+  it('supports solr query type', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ searchResults: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().advancedSearch('type:DOCUMENT AND space:Main', 'solr');
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('type=solr');
+  });
+
+  it('returns empty array when searchResults is missing', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const results = await new XWikiClient().advancedSearch("where 1=1");
+    expect(results).toEqual([]);
+  });
+
+  it('throws XWikiError on error response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 400, statusText: 'Bad Request',
+      headers: { get: () => null },
+    }));
+
+    await expect(new XWikiClient().advancedSearch('bad query', 'hql')).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4: renderPage
+// ---------------------------------------------------------------------------
+
+describe('renderPage', () => {
+  it('returns plain text content with correct metadata', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: () => Promise.resolve('This is the rendered plain text content of the page.'),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const client = new XWikiClient();
+    const result = await client.renderPage('Main', 'WebHome', 'plain');
+
+    expect(result.space).toBe('Main');
+    expect(result.page).toBe('WebHome');
+    expect(result.syntax).toBe('plain');
+    expect(result.content).toBe('This is the rendered plain text content of the page.');
+  });
+
+  it('uses the action URL (not REST path) for plain text', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: () => Promise.resolve('content'),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().renderPage('Sandbox', 'TestPage', 'plain');
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/bin/get/Sandbox/TestPage');
+    expect(url).toContain('outputSyntax=plain');
+    expect(url).toContain('xpage=plain');
+    // Must NOT use the REST path
+    expect(url).not.toContain('/rest/wikis');
+  });
+
+  it('uses annotatedhtmlmacros outputSyntax for html render', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: () => Promise.resolve('<html>content</html>'),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().renderPage('Main', 'WebHome', 'html');
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('outputSyntax=annotatedhtmlmacros');
+    expect(url).not.toContain('xpage=plain');
+  });
+
+  it('defaults to plain syntax', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      text: () => Promise.resolve('text'),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().renderPage('Main', 'WebHome');
+    expect(result.syntax).toBe('plain');
+  });
+
+  it('throws XWikiError on render failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 403, statusText: 'Forbidden',
+      headers: { get: () => null },
+    }));
+
+    await expect(new XWikiClient().renderPage('Main', 'WebHome')).rejects.toThrow(XWikiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4: getRecentChanges
+// ---------------------------------------------------------------------------
+
+describe('getRecentChanges', () => {
+  it('returns recent changes with parsed timestamps', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      historySummaries: [
+        { version: 'Main.WebHome/5.1', modified: 1712100000000, modifier: 'xwiki:XWiki.JohnMeunier', comment: 'Updated docs' },
+        { version: 'Sandbox.Test/2.1', modified: 1712050000000, modifier: 'xwiki:XWiki.PercyProcess', comment: 'Added section' },
+      ],
+    }));
+
+    const client = new XWikiClient();
+    const changes = await client.getRecentChanges(10);
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0].version).toBe('Main.WebHome/5.1');
+    expect(changes[0].modifier).toBe('JohnMeunier');
+    expect(changes[0].modified_date).toBe(new Date(1712100000000).toISOString());
+    expect(changes[0].comment).toBe('Updated docs');
+  });
+
+  it('calls the modifications endpoint with limit', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ historySummaries: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getRecentChanges(15);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/wikis/xwiki/modifications');
+    expect(url).toContain('number=15');
+    expect(url).toContain('media=json');
+  });
+
+  it('defaults to 20 results when no limit provided', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      json: () => Promise.resolve({ historySummaries: [] }),
+      headers: { get: () => null },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().getRecentChanges();
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('number=20');
+  });
+
+  it('returns empty array when historySummaries is missing', async () => {
+    vi.stubGlobal('fetch', mockFetch({}));
+    const changes = await new XWikiClient().getRecentChanges();
+    expect(changes).toEqual([]);
+  });
+
+  it('throws XWikiError on error response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 403, statusText: 'Forbidden',
+      headers: { get: () => null },
+    }));
+
+    await expect(new XWikiClient().getRecentChanges()).rejects.toThrow(XWikiError);
+  });
+});
