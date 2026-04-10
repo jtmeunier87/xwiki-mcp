@@ -20,6 +20,7 @@ function mockFetch(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
+    headers: new Map([['XWiki-Form-Token', 'test-csrf-token']]),
   });
 }
 

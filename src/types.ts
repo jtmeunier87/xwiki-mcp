@@ -86,6 +86,23 @@ export interface XWikiAttachmentsResponse {
   attachments: XWikiAttachmentRaw[];
 }
 
+// XWiki REST API response shapes for comments
+
+export interface XWikiCommentRaw {
+  id?: number;
+  author?: string;
+  authorName?: string;
+  date?: string | number;
+  text?: string;
+  highlight?: string;
+  replyTo?: number;
+  xwikiAbsoluteUrl?: string;
+}
+
+export interface XWikiCommentsResponse {
+  comments: XWikiCommentRaw[];
+}
+
 // Transformed output types (what tools return)
 
 export interface Space {
@@ -128,6 +145,21 @@ export interface Attachment {
   author?: string;
   date?: string;
   download_url: string;
+}
+
+export interface Comment {
+  id?: number;
+  author?: string;
+  date?: string;
+  text: string;
+  reply_to?: number;
+}
+
+export interface PageWriteResult {
+  title: string;
+  version?: string;
+  url: string;
+  status: string;
 }
 
 export interface Pagination {
