@@ -535,8 +535,8 @@ export class XWikiClient {
 
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/tags`;
 
-    // xWiki expects a tags XML document with the full new tag set
-    const tagElements = merged.map(t => `  <tag><name>${this.escapeXml(t)}</name></tag>`).join('\n');
+    // xWiki expects <tag name="value"/> attribute syntax (not text content)
+    const tagElements = merged.map(t => `  <tag name="${this.escapeXml(t)}"/>`).join('\n');
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<tags xmlns="http://www.xwiki.org">\n${tagElements}\n</tags>`;
 
     await this.mutate('PUT', path, xml, 'application/xml');
@@ -551,7 +551,9 @@ export class XWikiClient {
    * List all XWiki classes defined in the wiki.
    */
   async listClasses(start: number, limit: number): Promise<{ classes: XWikiClass[]; pagination: Pagination }> {
-    const data = await this.get<XWikiClassesResponse>('/classes', { start, number: limit });
+    // Note: xWiki classes endpoint ignores 'number' param — returns all or default batch
+    // Use start for pagination; limit is advisory for has_more calculation only
+    const data = await this.get<XWikiClassesResponse>('/classes', { start });
     // xWiki REST API uses the key 'clazzs' (intentional typo in the API)
     const raw = data.clazzs ?? [];
     const classes = raw.map((c: XWikiClassRaw) => ({

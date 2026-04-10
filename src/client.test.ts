@@ -336,6 +336,11 @@ describe('addTags', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await new XWikiClient().addTags('Main', 'WebHome', ['new']);
+    // Verify the PUT used attribute syntax <tag name="..."/>
+    // [0]=GET tags (also seeds CSRF), [1]=PUT tags (CSRF cached from [0])
+    const putCall = fetchMock.mock.calls[1];
+    expect(putCall[1].body).toContain('name="existing"');
+    expect(putCall[1].body).toContain('name="new"');
     expect(result.map(t => t.name)).toContain('existing');
     expect(result.map(t => t.name)).toContain('new');
   });
