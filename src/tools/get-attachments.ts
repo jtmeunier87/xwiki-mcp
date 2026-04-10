@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'get_attachments',
+    'xwiki_get_attachments',
     {
       description: 'Get list of files attached to a wiki page.',
       inputSchema: {

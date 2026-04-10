@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'list_pages',
+    'xwiki_list_pages',
     {
       description: 'Get list of pages in a wiki space. Supports nested spaces using dot notation (e.g. "Space1.SubSpace").',
       inputSchema: {

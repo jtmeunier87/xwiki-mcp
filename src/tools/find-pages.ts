@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'find_pages',
+    'xwiki_find_pages',
     `Find pages across the entire wiki using one or more filters. Unlike list_pages (which requires knowing the space), this searches the whole wiki.
 
 Filters (at least one required):

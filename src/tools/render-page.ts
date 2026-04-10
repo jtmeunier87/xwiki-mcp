@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'render_page',
+    'xwiki_render_page',
     `Render a wiki page to plain text or HTML by executing the page through the xWiki rendering engine.
 
 Useful for:

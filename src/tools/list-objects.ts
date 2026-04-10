@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'list_objects',
+    'xwiki_list_objects',
     'List all XObjects attached to a page. Optionally filter by class name. Returns object numbers and properties.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Sales")'),

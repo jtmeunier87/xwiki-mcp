@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'get_page_history',
+    'xwiki_get_page_history',
     'Get the revision history of a wiki page, showing all past versions with timestamps, authors, and edit comments.',
     {
       space: z.string().describe("Wiki space name (e.g. 'Main', 'Sandbox')"),

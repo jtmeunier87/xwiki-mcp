@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'update_page',
+    'xwiki_update_page',
     {
       description:
         'Update an existing wiki page. You can update the content, title, or both. ' +

@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'get_object_property',
+    'xwiki_get_object_property',
     `Read a single named property from an XObject on a page. More efficient than get_object when you only need one field.
 
 Use this for:

@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'list_classes',
+    'xwiki_list_classes',
     'List all XWiki classes (XObject schemas) defined in the wiki. Classes define structured data types used by XObjects attached to pages.',
     {
       start: z.number().int().min(0).default(0).describe('Zero-based offset for pagination'),

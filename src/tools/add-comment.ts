@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'add_comment',
+    'xwiki_add_comment',
     {
       description:
         'Add a comment to a wiki page. Optionally reply to an existing comment by providing its ID.',

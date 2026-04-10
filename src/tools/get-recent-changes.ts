@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'get_recent_changes',
+    'xwiki_get_recent_changes',
     'Get the most recent page modifications across the entire wiki. Shows who edited what and when, with optional edit comments. Useful for activity monitoring, change audits, and staying up to date with wiki activity.',
     {
       limit: z.number().int().min(1).max(100).default(20).describe('Number of recent changes to return (default 20)'),

@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'delete_attachment',
+    'xwiki_delete_attachment',
     'Delete an attachment from a page. This action is permanent and cannot be undone.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Finance")'),

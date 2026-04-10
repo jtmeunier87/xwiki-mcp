@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'get_page',
+    'xwiki_get_page',
     {
       description: 'Get the content and metadata of a specific wiki page. Content is returned as raw wiki markup (xwiki/2.1 syntax).',
       inputSchema: {

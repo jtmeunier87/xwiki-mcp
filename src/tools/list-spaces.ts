@@ -3,7 +3,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'list_spaces',
+    'xwiki_list_spaces',
     { description: 'Get list of all spaces (top-level sections) in the wiki' },
     async () => {
       try {

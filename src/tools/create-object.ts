@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'create_object',
+    'xwiki_create_object',
     'Create a new XObject of a given class on a page. Use list_classes and get_class to discover available class names and their property schemas before calling this.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Sales")'),

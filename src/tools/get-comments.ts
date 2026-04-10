@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'get_comments',
+    'xwiki_get_comments',
     {
       description:
         'Get all comments on a wiki page. Returns comment IDs, authors, dates, text, and reply-to references. ' +

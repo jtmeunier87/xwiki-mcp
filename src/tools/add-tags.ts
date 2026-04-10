@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'add_tags',
+    'xwiki_add_tags',
     'Add one or more tags to a page. Existing tags are preserved — this is additive, not a replacement. Returns the full list of tags after the update.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub")'),

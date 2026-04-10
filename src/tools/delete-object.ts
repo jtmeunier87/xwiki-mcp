@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'delete_object',
+    'xwiki_delete_object',
     'Delete an XObject from a page by class name and object number. This is permanent.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Sales")'),

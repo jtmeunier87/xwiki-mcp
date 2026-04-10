@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'get_all_wiki_tags',
+    'xwiki_get_all_wiki_tags',
     'List all tags used anywhere in the wiki. Use this to discover available tags before calling get_pages_by_tag.',
     {},
     async (_args: Record<string, never>) => {

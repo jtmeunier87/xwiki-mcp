@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'update_object',
+    'xwiki_update_object',
     'Update properties of an existing XObject on a page. Only the supplied properties are modified — unspecified properties retain their current values.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Sales")'),

@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'advanced_search',
+    'xwiki_advanced_search',
     `Run a structured HQL or XWQL query against the wiki.
 
 Query types:

@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'create_page',
+    'xwiki_create_page',
     {
       description:
         'Create a new wiki page. The page will be created in the specified space with the given name. ' +

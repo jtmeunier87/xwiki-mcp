@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'get_page_children',
+    'xwiki_get_page_children',
     {
       description: 'Get child pages of a wiki page. Useful for navigating page hierarchies.',
       inputSchema: {

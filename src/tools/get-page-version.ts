@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'get_page_version',
+    'xwiki_get_page_version',
     'Retrieve the full content of a wiki page at a specific historical version (e.g. "3.1", "1.1").',
     {
       space: z.string().describe("Wiki space name (e.g. 'Main')"),

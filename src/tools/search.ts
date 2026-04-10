@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'search',
+    'xwiki_search',
     {
       description: 'Full-text search across the wiki. Returns pages matching the query.',
       inputSchema: {

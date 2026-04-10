@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'download_attachment',
+    'xwiki_download_attachment',
     'Download an attachment from a page. Returns the file content as a base64-encoded string along with MIME type and size.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Finance")'),

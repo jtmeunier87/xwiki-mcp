@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'delete_page',
+    'xwiki_delete_page',
     {
       description:
         'Delete a wiki page permanently. This action cannot be undone. ' +
