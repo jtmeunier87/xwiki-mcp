@@ -652,19 +652,10 @@ export class XWikiClient {
   ): Promise<XWikiObjectWriteResult> {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects`;
 
-    const propElements = this.propertiesXml(properties);
+    const form = this.propertiesForm(properties);
+    form.set('className', className);
 
-    const xml = [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<object xmlns="http://www.xwiki.org">',
-      `  <className>${this.escapeXml(className)}</className>`,
-      '  <properties>',
-      propElements,
-      '  </properties>',
-      '</object>',
-    ].join('\n');
-
-    const response = await this.mutate('POST', path, xml, 'application/xml');
+    const response = await this.mutate('POST', path, form.toString(), 'application/x-www-form-urlencoded');
 
     try {
       const data = await response.json() as XWikiObjectRaw;
@@ -692,20 +683,9 @@ export class XWikiClient {
   ): Promise<XWikiObjectWriteResult> {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}`;
 
-    const propElements = this.propertiesXml(properties);
+    const form = this.propertiesForm(properties);
 
-    const xml = [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<object xmlns="http://www.xwiki.org">',
-      `  <className>${this.escapeXml(className)}</className>`,
-      `  <number>${objectNumber}</number>`,
-      '  <properties>',
-      propElements,
-      '  </properties>',
-      '</object>',
-    ].join('\n');
-
-    const response = await this.mutate('PUT', path, xml, 'application/xml');
+    const response = await this.mutate('PUT', path, form.toString(), 'application/x-www-form-urlencoded');
 
     try {
       const data = await response.json() as XWikiObjectRaw;
@@ -952,15 +932,14 @@ export class XWikiClient {
 
   /** Escape special XML characters in content */
   /**
-   * Object properties as xWiki REST XML. The property name is an ATTRIBUTE
-   * (<property name="x">), not a child element: xWiki ignores a <name>
-   * element and saves the object with no values.
+   * Object properties as an xWiki REST form body: property#<name>=<value>.
+   * xWiki's form-encoded object endpoints set each property directly. (The
+   * XML form was silently ignored: xWiki saved the object with no values.)
    */
-  private propertiesXml(properties: Record<string, string>): string {
-    return Object.entries(properties)
-      .map(([name, value]) =>
-        `  <property name="${this.escapeXml(name)}"><value>${this.escapeXml(value)}</value></property>`)
-      .join('\n');
+  private propertiesForm(properties: Record<string, string>): URLSearchParams {
+    const form = new URLSearchParams();
+    for (const [name, value] of Object.entries(properties)) form.set(`property#${name}`, value);
+    return form;
   }
 
   private escapeXml(s: string): string {

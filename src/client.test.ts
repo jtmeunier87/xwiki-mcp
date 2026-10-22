@@ -502,10 +502,10 @@ describe('createObject', () => {
     const [url, opts] = fetch.mock.calls[1];
     expect(url).toContain('/objects');
     expect(opts.method).toBe('POST');
-    expect(opts.headers['Content-Type']).toBe('application/xml');
-    expect(opts.body).toContain('<className>MyApp.MyClass</className>');
-    expect(opts.body).toContain('<property name="name"><value>Test</value></property>');
-    expect(opts.body).not.toContain('<name>');
+    expect(opts.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    const form = new URLSearchParams(opts.body);
+    expect(form.get('className')).toBe('MyApp.MyClass');
+    expect(form.get('property#name')).toBe('Test');
   });
 });
 
@@ -530,19 +530,19 @@ describe('updateObject', () => {
     const [url, opts] = fetch.mock.calls[1];
     expect(url).toContain('/objects/MyApp.MyClass/1');
     expect(opts.method).toBe('PUT');
-    expect(opts.body).toContain('<number>1</number>');
-    expect(opts.body).toContain('<property name="status"><value>inactive</value></property>');
-    expect(opts.body).not.toContain('<name>');
+    expect(opts.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    expect(new URLSearchParams(opts.body).get('property#status')).toBe('inactive');
   });
 
-  it('escapes property names and values', async () => {
+  it('encodes multi-line and special-character values', async () => {
     const fetch = mockFetch({ className: 'MyApp.MyClass', number: 0 }, 202);
     vi.stubGlobal('fetch', fetch);
 
-    await new XWikiClient().updateObject('Main', 'WebHome', 'MyApp.MyClass', 0, { 'a"b': 'x < y & z' });
+    const value = '* line 1\n* x < y & z = 100%\n{{code}}a#b{{/code}}';
+    await new XWikiClient().updateObject('Main', 'WebHome', 'MyApp.MyClass', 0, { steps: value });
 
     const [, opts] = fetch.mock.calls[1];
-    expect(opts.body).toContain('<property name="a&quot;b"><value>x &lt; y &amp; z</value></property>');
+    expect(new URLSearchParams(opts.body).get('property#steps')).toBe(value);
   });
 });
 
