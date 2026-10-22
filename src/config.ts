@@ -7,6 +7,16 @@ export interface Config {
   wikiName: string;
   restPath: string;
   pageLimit: number;
+  readOnly: boolean;
+  allowDelete: boolean;
+}
+
+function parseFlag(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  if (['true', '1', 'yes'].includes(raw.toLowerCase())) return true;
+  if (['false', '0', 'no'].includes(raw.toLowerCase())) return false;
+  throw new Error(`${name} must be true|false, got: ${raw}`);
 }
 
 function load(): Config {
@@ -34,6 +44,8 @@ function load(): Config {
     wikiName: process.env.XWIKI_WIKI_NAME ?? 'xwiki',
     restPath: process.env.XWIKI_REST_PATH ?? '/rest',
     pageLimit,
+    readOnly: parseFlag('XWIKI_MCP_READ_ONLY', false),
+    allowDelete: parseFlag('XWIKI_MCP_ALLOW_DELETE', false),
   };
 }
 

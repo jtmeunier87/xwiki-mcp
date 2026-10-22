@@ -57,8 +57,67 @@ import { register as registerFindPages } from './tools/find-pages.js';
 import { register as registerExportPage } from './tools/export-page.js';
 import { register as registerGetObjectProperty } from './tools/get-object-property.js';
 
-const TOOL_COUNT = 34;
-const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 6 history/query/render, 5 wiki-level';
+type Access = 'read' | 'write' | 'delete';
+type Register = (server: McpServer, client: XWikiClient) => void;
+
+// Every tool with the access it needs. XWIKI_MCP_READ_ONLY keeps only 'read';
+// 'delete' tools also need XWIKI_MCP_ALLOW_DELETE.
+const TOOLS: Array<[Access, Register]> = [
+  // Pages
+  ['read', registerListSpaces],
+  ['read', registerListPages],
+  ['read', registerGetPage],
+  ['read', registerSearch],
+  ['read', registerGetPageChildren],
+  ['write', registerCreatePage],
+  ['write', registerUpdatePage],
+  ['delete', registerDeletePage],
+  ['read', registerGetComments],
+  ['write', registerAddComment],
+
+  // Attachments
+  ['read', registerGetAttachments],
+  ['read', registerDownloadAttachment],
+  ['write', registerUploadAttachment],
+  ['delete', registerDeleteAttachment],
+
+  // Tags
+  ['read', registerGetTags],
+  ['write', registerAddTags],
+
+  // Classes and objects
+  ['read', registerListClasses],
+  ['read', registerGetClass],
+  ['read', registerListObjects],
+  ['read', registerGetObject],
+  ['write', registerCreateObject],
+  ['write', registerUpdateObject],
+  ['delete', registerDeleteObject],
+
+  // History, query, render
+  ['read', registerGetPageHistory],
+  ['read', registerGetPageVersion],
+  ['write', registerRollbackPage],
+  ['read', registerAdvancedSearch],
+  ['read', registerRenderPage],
+  ['read', registerGetRecentChanges],
+
+  // Wiki-level
+  ['read', registerGetAllWikiTags],
+  ['read', registerGetPagesByTag],
+  ['read', registerFindPages],
+  ['read', registerExportPage],
+  ['read', registerGetObjectProperty],
+];
+
+function allowed(access: Access): boolean {
+  if (access === 'read') return true;
+  if (config.readOnly) return false;
+  return access === 'write' || config.allowDelete;
+}
+
+const ENABLED_TOOLS = TOOLS.filter(([access]) => allowed(access));
+const MODE = config.readOnly ? 'read-only' : config.allowDelete ? 'read/write/delete' : 'read/write, no delete';
 
 async function buildServer(): Promise<McpServer> {
   const server = new McpServer({
@@ -67,57 +126,7 @@ async function buildServer(): Promise<McpServer> {
   });
 
   const client = new XWikiClient();
-
-  // Read tools (6)
-  registerListSpaces(server, client);
-  registerListPages(server, client);
-  registerGetPage(server, client);
-  registerSearch(server, client);
-  registerGetAttachments(server, client);
-  registerGetPageChildren(server, client);
-
-  // Write tools (5)
-  registerCreatePage(server, client);
-  registerUpdatePage(server, client);
-  registerDeletePage(server, client);
-  registerAddComment(server, client);
-  registerGetComments(server, client);
-
-  // Attachment tools (3)
-  registerUploadAttachment(server, client);
-  registerDownloadAttachment(server, client);
-  registerDeleteAttachment(server, client);
-
-  // Tag tools (2)
-  registerGetTags(server, client);
-  registerAddTags(server, client);
-
-  // Class tools (2)
-  registerListClasses(server, client);
-  registerGetClass(server, client);
-
-  // Object tools (5)
-  registerListObjects(server, client);
-  registerGetObject(server, client);
-  registerCreateObject(server, client);
-  registerUpdateObject(server, client);
-  registerDeleteObject(server, client);
-
-  // Phase 4 tools (5)
-  registerGetPageHistory(server, client);
-  registerGetPageVersion(server, client);
-  registerRollbackPage(server, client);
-  registerAdvancedSearch(server, client);
-  registerRenderPage(server, client);
-  registerGetRecentChanges(server, client);
-
-  // Phase 5 tools (5)
-  registerGetAllWikiTags(server, client);
-  registerGetPagesByTag(server, client);
-  registerFindPages(server, client);
-  registerExportPage(server, client);
-  registerGetObjectProperty(server, client);
-
+  for (const [, register] of ENABLED_TOOLS) register(server, client);
   return server;
 }
 
@@ -131,7 +140,7 @@ async function main() {
 
       if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', version: VERSION, tools: TOOL_COUNT }));
+        res.end(JSON.stringify({ status: 'ok', version: VERSION, tools: ENABLED_TOOLS.length, mode: MODE }));
         return;
       }
 
@@ -153,7 +162,7 @@ async function main() {
     httpServer.listen(httpPort, () => {
       process.stderr.write(`xwiki-mcp v${VERSION} started in Streamable HTTP mode on port ${httpPort}\n`);
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
-      process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
+      process.stderr.write(`Registered ${ENABLED_TOOLS.length} of ${TOOLS.length} tools (${MODE})\n`);
       process.stderr.write(`MCP endpoint: http://localhost:${httpPort}/mcp\n`);
     });
 
@@ -164,7 +173,7 @@ async function main() {
     await server.connect(transport);
 
     process.stderr.write(`xwiki-mcp v${VERSION} started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
-    process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
+    process.stderr.write(`Registered ${ENABLED_TOOLS.length} of ${TOOLS.length} tools (${MODE})\n`);
   }
 }
 

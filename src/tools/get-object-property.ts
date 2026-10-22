@@ -16,9 +16,9 @@ Use get_class to discover property names for a class.`,
     {
       space: z.string().describe("Wiki space name (e.g. 'Main')"),
       page: z.string().describe("Page name (e.g. 'WebHome')"),
-      class_name: z.string().describe("Fully-qualified class name (e.g. 'Administration Hub.Sales.Customer Profile.Code.ClientClass')"),
+      class_name: z.string().describe("Fully-qualified class name (e.g. 'Sandbox.Code.ExampleClass')"),
       object_number: z.number().int().min(0).default(0).describe('Object index on the page (0-based, default 0)'),
-      property_name: z.string().describe("Property name to read (e.g. 'status', 'title', 'UUID')"),
+      property_name: z.string().describe("Property name to read (e.g. 'status', 'title', 'priority')"),
     },
     async ({ space, page, class_name, object_number, property_name }) => {
       const prop = await client.getObjectProperty(space, page, class_name, object_number, property_name);

@@ -8,7 +8,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_delete_attachment',
     'Delete an attachment from a page. This action is permanent and cannot be undone.',
     {
-      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Finance")'),
+      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs.Guides")'),
       page: z.string().describe('Page name (e.g. "WebHome")'),
       filename: z.string().describe('Filename of the attachment to delete (e.g. "old-report.pdf")'),
     },

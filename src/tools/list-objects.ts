@@ -8,7 +8,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_list_objects',
     'List all XObjects attached to a page. Optionally filter by class name. Returns object numbers and properties.',
     {
-      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Sales")'),
+      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs.Guides")'),
       page: z.string().describe('Page name (e.g. "WebHome")'),
       class_name: z.string().optional().describe('Optional class name to filter by (e.g. "XWiki.XWikiComments"). If omitted, returns all objects on the page.'),
     },

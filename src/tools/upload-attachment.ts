@@ -8,7 +8,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_upload_attachment',
     'Upload a file as an attachment to a page. The file content must be provided as a base64-encoded string. Returns the attachment metadata including URL.',
     {
-      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Finance")'),
+      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs.Guides")'),
       page: z.string().describe('Page name (e.g. "WebHome")'),
       filename: z.string().describe('Filename for the attachment including extension (e.g. "report.pdf")'),
       content_base64: z.string().describe('Base64-encoded file content'),
