@@ -2,21 +2,23 @@
 
 A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), giving AI agents full read/write access to an XWiki instance via its REST API.
 
-**Fork of [vitos73/xwiki-mcp](https://github.com/vitos73/xwiki-mcp)** — extended across 5 phases to cover writes, attachments, tags, XObject CRUD, page history, advanced queries, rendering, HTTP/SSE transport, wiki-wide tag and page navigation, PDF export, and single-property object reads.
+**Fork of [vitos73/xwiki-mcp](https://github.com/vitos73/xwiki-mcp)** — extended to cover writes, attachments, tags, XObject CRUD, page history and rollback, advanced queries, rendering, Streamable HTTP transport, wiki-wide tag and page navigation, PDF export, and single-property object reads.
+
+All tool names start with `xwiki_` so they do not clash with other MCP servers. Write and delete tools can be switched off (see [Access modes](#access-modes)).
 
 ---
 
-## 34 Tools across 7 categories
+## 34 tools across 7 categories
 
 | Category | Count | Tools |
 |---|---|---|
-| **Pages (Read)** | 5 | `list_spaces`, `list_pages`, `get_page`, `get_page_children`, `search` |
-| **Pages (Write)** | 5 | `create_page`, `update_page`, `delete_page`, `add_comment`, `get_comments` |
-| **Attachments** | 4 | `get_attachments`, `upload_attachment`, `download_attachment`, `delete_attachment` |
-| **Tags** | 2 | `get_tags`, `add_tags` |
-| **Classes & Objects** | 7 | `list_classes`, `get_class`, `list_objects`, `get_object`, `create_object`, `update_object`, `delete_object` |
-| **History & Query** | 6 | `get_page_history`, `get_page_version`, `rollback_page`, `advanced_search`, `render_page`, `get_recent_changes` |
-| **Wiki-Level** | 5 | `get_all_wiki_tags`, `get_pages_by_tag`, `find_pages`, `export_page`, `get_object_property` |
+| **Pages (Read)** | 5 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_search` |
+| **Pages (Write) & Comments** | 5 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_delete_page`, `xwiki_add_comment`, `xwiki_get_comments` |
+| **Attachments** | 4 | `xwiki_get_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
+| **Tags** | 2 | `xwiki_get_tags`, `xwiki_add_tags` |
+| **Classes & Objects** | 7 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **History & Query** | 6 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_rollback_page`, `xwiki_advanced_search`, `xwiki_render_page`, `xwiki_get_recent_changes` |
+| **Wiki-Level** | 5 | `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag`, `xwiki_find_pages`, `xwiki_export_page`, `xwiki_get_object_property` |
 
 ---
 
@@ -41,9 +43,9 @@ A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), givin
 }
 ```
 
-### HTTP/SSE server mode
+### HTTP server mode (Streamable HTTP)
 
-Set `XWIKI_MCP_PORT` to run as an HTTP server with SSE transport (multi-client):
+Set `XWIKI_MCP_PORT` to run as a stateless Streamable HTTP server (multi-client):
 
 ```bash
 XWIKI_MCP_PORT=3001 \
@@ -53,7 +55,9 @@ XWIKI_PASSWORD=YourPassword \
 node dist/index.js
 ```
 
-Endpoints: `GET /sse` (connect), `POST /message` (send), `GET /health`
+Endpoints: `POST /mcp` (MCP), `GET /health` (version, enabled tool count, access mode).
+
+**The HTTP mode has no authentication of its own.** Anyone who can reach the port can use every enabled tool with the configured xWiki account. Bind it to localhost or a private network, or put it behind an authenticating proxy (an access gateway, a reverse proxy with auth, or similar). Use the access-mode flags below to limit what a reachable server can do.
 
 ### Environment Variables
 
@@ -65,7 +69,25 @@ Endpoints: `GET /sse` (connect), `POST /message` (send), `GET /health`
 | `XWIKI_PASSWORD` | If basic | — | xWiki password |
 | `XWIKI_TOKEN` | If token | — | Bearer token (requires xWiki 15.4+) |
 | `XWIKI_WIKI_NAME` | No | `xwiki` | Wiki name |
-| `XWIKI_MCP_PORT` | No | — | Set to enable HTTP/SSE mode |
+| `XWIKI_REST_PATH` | No | `/rest` | REST path |
+| `XWIKI_PAGE_LIMIT` | No | `50` | Default page size |
+| `XWIKI_MCP_PORT` | No | — | Set to enable Streamable HTTP mode |
+| `XWIKI_MCP_READ_ONLY` | No | `false` | `true` registers only read tools |
+| `XWIKI_MCP_ALLOW_DELETE` | No | `false` | `true` also registers the delete tools |
+
+### Access modes
+
+Tools a mode leaves out are not registered, so clients never see them. The xWiki account's own rights still apply on top.
+
+| Mode | Settings | Tools |
+|---|---|---|
+| Read/write, no delete (default) | — | 31: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
+| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 34 |
+| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 23 read tools |
+
+Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_add_comment`, `xwiki_upload_attachment`, `xwiki_add_tags`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_rollback_page`.
+
+> **Changed in 0.10.0:** delete tools are off unless `XWIKI_MCP_ALLOW_DELETE=true`.
 
 ---
 
@@ -73,133 +95,133 @@ Endpoints: `GET /sse` (connect), `POST /message` (send), `GET /health`
 
 ### Page Read Tools
 
-#### `list_spaces`
+#### `xwiki_list_spaces`
 List all spaces in the wiki.
 
-#### `list_pages`
+#### `xwiki_list_pages`
 List pages in a space with pagination (`start`, `limit`). Space names use dot notation for nested spaces.
 
-#### `get_page`
+#### `xwiki_get_page`
 Get full page content, syntax, author, version, and parent link.
 
-#### `get_page_children`
+#### `xwiki_get_page_children`
 Get immediate child pages of a given page.
 
-#### `search`
+#### `xwiki_search`
 Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
 
 ### Page Write Tools
 
-#### `create_page`
+#### `xwiki_create_page`
 Create a new page with title, content, optional parent, and optional syntax.
 
-#### `update_page`
+#### `xwiki_update_page`
 Update an existing page. Fetches current version first to preserve fields not specified.
 
-#### `delete_page`
-Permanently delete a page.
+#### `xwiki_delete_page`
+Permanently delete a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 
-#### `add_comment`
+#### `xwiki_add_comment`
 Add a comment to a page. Supports threaded replies via `reply_to`.
 
-#### `get_comments`
+#### `xwiki_get_comments`
 List all comments on a page.
 
 ### Attachment Tools
 
-#### `get_attachments`
+#### `xwiki_get_attachments`
 List attachments on a page with name, size, MIME type, and download URL.
 
-#### `upload_attachment`
+#### `xwiki_upload_attachment`
 Upload a file (base64-encoded) to a page.
 
-#### `download_attachment`
+#### `xwiki_download_attachment`
 Download a file — returns base64 content, MIME type, and size.
 
-#### `delete_attachment`
-Delete an attachment from a page.
+#### `xwiki_delete_attachment`
+Delete an attachment from a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 
 ### Tag Tools
 
-#### `get_tags`
+#### `xwiki_get_tags`
 Get tags on a specific page.
 
-#### `add_tags`
+#### `xwiki_add_tags`
 Add tags to a page (additive — preserves existing tags, no duplicates).
 
 ### Class & Object Tools
 
-#### `list_classes`
+#### `xwiki_list_classes`
 List all XWiki classes defined in the wiki.
 
-#### `get_class`
-Get a class definition including all property names and types. Use before `create_object`.
+#### `xwiki_get_class`
+Get a class definition: each property's name, type and non-empty attributes (`prettyName`, and for StaticList properties the allowed `values` and `multiSelect`). Use before `xwiki_create_object` to know which fields and values a class accepts.
 
-#### `list_objects`
+#### `xwiki_list_objects`
 List all XObjects on a page. Optionally filter by `class_name`.
 
-#### `get_object`
+#### `xwiki_get_object`
 Get a single object by class name and object number (0-based).
 
-#### `create_object`
+#### `xwiki_create_object`
 Create a new XObject on a page with class name and property key-value map.
 
-#### `update_object`
+#### `xwiki_update_object`
 Update properties of an existing object. Only specified properties are changed.
 
-#### `delete_object`
-Delete an object by class name and number.
+#### `xwiki_delete_object`
+Delete an object by class name and number. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 
 ### History & Query Tools
 
-#### `get_page_history`
+#### `xwiki_get_page_history`
 List all revisions of a page — version string, timestamp, author, edit comment.
 
-#### `get_page_version`
+#### `xwiki_get_page_version`
 Retrieve full page content at a specific historical version (e.g. `3.1`).
 
-#### `rollback_page`
+#### `xwiki_rollback_page`
 Roll a page back to an earlier version (content and objects). xWiki saves the old version as a new version, so history is kept. Uses the `/bin/rollback/` action URL with the CSRF token.
 
-#### `advanced_search`
+#### `xwiki_advanced_search`
 Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`.
 
-#### `render_page`
+#### `xwiki_render_page`
 Render a page through the xWiki macro engine to plain text or HTML. Useful for pages with macros, velocity, or include blocks. Uses the action URL (`/bin/get/`) — not the REST API.
 
-#### `get_recent_changes`
+#### `xwiki_get_recent_changes`
 Get the most recent modifications across the entire wiki.
 
 ### Wiki-Level Tools
 
-#### `get_all_wiki_tags`
-List every tag used anywhere in the wiki. Use this before `get_pages_by_tag` to discover available tags.
+#### `xwiki_get_all_wiki_tags`
+List every tag used anywhere in the wiki. Use this before `xwiki_get_pages_by_tag` to discover available tags.
 
-#### `get_pages_by_tag`
-Get all pages that have a specific tag (e.g. `PM`, `AV`).
+#### `xwiki_get_pages_by_tag`
+Get all pages that have a specific tag (e.g. `howto`).
 
-#### `find_pages`
+#### `xwiki_find_pages`
 Find pages wiki-wide by name, space, and/or author — without needing to know the exact space. Deduplicates results automatically. At least one filter required.
 
-#### `export_page`
+#### `xwiki_export_page`
 Export a page as a PDF file. Returns base64-encoded PDF content, content type, and size. Requires the xWiki PDF export extension.
 
-#### `get_object_property`
-Read a single named property from an XObject — more efficient than `get_object` when only one field is needed. Useful for status checks and conditional logic.
+#### `xwiki_get_object_property`
+Read a single named property from an XObject — more efficient than `xwiki_get_object` when only one field is needed. Useful for status checks and conditional logic.
 
 ---
 
 ## Implementation Notes
 
 - **CSRF tokens**: Cached from GET response headers (`XWiki-Form-Token`), auto-refreshed on 403. Required for xWiki 14.10.8+.
-- **Write bodies**: All write operations use `application/xml` bodies (more reliable than JSON for xWiki REST mutations).
+- **Write bodies**: Page writes use `application/xml` bodies; object properties are sent as a form body (`property#name=value`), which is what xWiki actually saves.
 - **Nested spaces**: Dot notation (`Space.SubSpace`) converts to xWiki's `/spaces/X/spaces/Y/` URL format.
 - **xWiki API typo**: Classes endpoint returns `clazzs` (not `classes`) — handled transparently.
 - **History timestamps**: History endpoints return Unix milliseconds — automatically converted to ISO strings.
 - **Modifier prefix**: `xwiki:XWiki.` prefix stripped from all user references in display output.
-- **Render URL**: `render_page` and `export_page` use `/bin/get/` and `/bin/export/` action URLs, not the REST API.
-- **`get_object_property`**: Single-property endpoint returns the property at root level (not in a `properties` array) — confirmed against xWiki 18.x.
-- **`find_pages`**: The wiki-wide pages endpoint can return duplicates — automatically deduplicated by `fullName`.
+- **Render URL**: `xwiki_render_page` and `xwiki_export_page` use `/bin/get/` and `/bin/export/` action URLs, not the REST API.
+- **`xwiki_get_object_property`**: Single-property endpoint returns the property at root level (not in a `properties` array) — confirmed against xWiki 18.x.
+- **`xwiki_find_pages`**: The wiki-wide pages endpoint can return duplicates — automatically deduplicated by `fullName`.
 
 ---
 
@@ -210,7 +232,7 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test        # 74 tests, all phases
+npm test        # 78 unit tests (mocked fetch)
 ```
 
 ---
@@ -222,6 +244,8 @@ npm test        # 74 tests, all phases
 - [x] Phase 2+3 (v0.3.0) — Attachments, tags, XObject CRUD, class listing
 - [x] Phase 4 (v0.4.0) — Page history, advanced search (HQL/XWQL/Solr), render_page, recent changes, HTTP/SSE transport
 - [x] Phase 5 (v0.5.0) — Wiki tags, tag-based navigation, wiki-wide page finder, PDF export, single-property reads
+- [x] v0.6.0–v0.9.0 — Streamable HTTP transport, `xwiki_` tool prefix, Docker image, object write fix, page rollback
+- [x] v0.10.0 — Read-only / no-delete access modes, class property attributes in `xwiki_get_class`
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)
 
 ---

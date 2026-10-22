@@ -419,6 +419,30 @@ describe('getClass', () => {
     expect(cls.property_count).toBe(3);
     expect(cls.properties.map(p => p.name)).toEqual(['comment', 'author', 'date']);
   });
+
+  it('returns non-empty property attributes such as StaticList values', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      id: 'Sandbox.Code.ExampleClass',
+      name: 'Sandbox.Code.ExampleClass',
+      properties: [{
+        name: 'status',
+        type: 'StaticList',
+        attributes: [
+          { name: 'prettyName', value: 'Status' },
+          { name: 'values', value: 'draft|review|published' },
+          { name: 'multiSelect', value: '0' },
+          { name: 'validationMessage', value: '' },
+        ],
+      }],
+    }));
+
+    const cls = await new XWikiClient().getClass('Sandbox.Code.ExampleClass');
+    expect(cls.properties[0].attributes).toEqual({
+      prettyName: 'Status',
+      values: 'draft|review|published',
+      multiSelect: '0',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -577,8 +601,8 @@ describe('getPageHistory', () => {
   it('returns formatted history with parsed timestamps and stripped modifier prefix', async () => {
     vi.stubGlobal('fetch', mockFetch({
       historySummaries: [
-        { version: '19.1', modified: 1712000000000, modifier: 'xwiki:XWiki.JohnMeunier', comment: 'Updated intro' },
-        { version: '18.1', modified: 1711900000000, modifier: 'xwiki:XWiki.PercyProcess', comment: '' },
+        { version: '19.1', modified: 1712000000000, modifier: 'xwiki:XWiki.JaneDoe', comment: 'Updated intro' },
+        { version: '18.1', modified: 1711900000000, modifier: 'xwiki:XWiki.Admin', comment: '' },
       ],
     }));
 
@@ -587,12 +611,12 @@ describe('getPageHistory', () => {
 
     expect(history).toHaveLength(2);
     expect(history[0].version).toBe('19.1');
-    expect(history[0].modifier).toBe('JohnMeunier');
+    expect(history[0].modifier).toBe('JaneDoe');
     expect(history[0].modified_date).toBe(new Date(1712000000000).toISOString());
     expect(history[0].comment).toBe('Updated intro');
     // Empty comment should be undefined
     expect(history[1].comment).toBeUndefined();
-    expect(history[1].modifier).toBe('PercyProcess');
+    expect(history[1].modifier).toBe('Admin');
   });
 
   it('calls the correct history endpoint URL with limit', async () => {
@@ -633,23 +657,23 @@ describe('getPageHistory', () => {
 describe('getPageVersion', () => {
   it('returns page content at a specific version', async () => {
     vi.stubGlobal('fetch', mockFetch({
-      title: 'Administration Hub',
+      title: 'Docs',
       content: 'Initial content',
       syntax: 'xwiki/2.1',
-      author: 'XWiki.JohnMeunier',
+      author: 'XWiki.JaneDoe',
       modified: 1711500000000,
       version: '1.1',
-      xwikiAbsoluteUrl: 'https://wiki.example.com/Main/AdminHub',
+      xwikiAbsoluteUrl: 'https://wiki.example.com/Main/Docs',
     }));
 
     const client = new XWikiClient();
-    const page = await client.getPageVersion('Main', 'AdminHub', '1.1');
+    const page = await client.getPageVersion('Main', 'Docs', '1.1');
 
-    expect(page.title).toBe('Administration Hub');
+    expect(page.title).toBe('Docs');
     expect(page.version).toBe('1.1');
     expect(page.content).toBe('Initial content');
     expect(page.modified_date).toBe(new Date(1711500000000).toISOString());
-    expect(page.url).toBe('https://wiki.example.com/Main/AdminHub');
+    expect(page.url).toBe('https://wiki.example.com/Main/Docs');
   });
 
   it('calls the correct versioned URL', async () => {
@@ -706,7 +730,7 @@ describe('advancedSearch', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    await new XWikiClient().advancedSearch("where doc.author = 'XWiki.PercyProcess'", 'xwql', 20, 0);
+    await new XWikiClient().advancedSearch("where doc.author = 'XWiki.Admin'", 'xwql', 20, 0);
     const [url] = fetch.mock.calls[0];
     expect(url).toContain('/wikis/xwiki/query');
     expect(url).toContain('type=xwql');
@@ -839,8 +863,8 @@ describe('getRecentChanges', () => {
   it('returns recent changes with parsed timestamps', async () => {
     vi.stubGlobal('fetch', mockFetch({
       historySummaries: [
-        { version: 'Main.WebHome/5.1', modified: 1712100000000, modifier: 'xwiki:XWiki.JohnMeunier', comment: 'Updated docs' },
-        { version: 'Sandbox.Test/2.1', modified: 1712050000000, modifier: 'xwiki:XWiki.PercyProcess', comment: 'Added section' },
+        { version: 'Main.WebHome/5.1', modified: 1712100000000, modifier: 'xwiki:XWiki.JaneDoe', comment: 'Updated docs' },
+        { version: 'Sandbox.Test/2.1', modified: 1712050000000, modifier: 'xwiki:XWiki.Admin', comment: 'Added section' },
       ],
     }));
 
@@ -849,7 +873,7 @@ describe('getRecentChanges', () => {
 
     expect(changes).toHaveLength(2);
     expect(changes[0].version).toBe('Main.WebHome/5.1');
-    expect(changes[0].modifier).toBe('JohnMeunier');
+    expect(changes[0].modifier).toBe('JaneDoe');
     expect(changes[0].modified_date).toBe(new Date(1712100000000).toISOString());
     expect(changes[0].comment).toBe('Updated docs');
   });
@@ -905,15 +929,15 @@ describe('getRecentChanges', () => {
 describe('getAllWikiTags', () => {
   it('returns list of wiki tags', async () => {
     vi.stubGlobal('fetch', mockFetch({
-      tags: [{ name: 'PM' }, { name: 'AV' }, { name: 'AD' }],
+      tags: [{ name: 'howto' }, { name: 'release' }, { name: 'draft' }],
     }));
 
     const client = new XWikiClient();
     const tags = await client.getAllWikiTags();
 
     expect(tags).toHaveLength(3);
-    expect(tags[0].name).toBe('PM');
-    expect(tags[2].name).toBe('AD');
+    expect(tags[0].name).toBe('howto');
+    expect(tags[2].name).toBe('draft');
   });
 
   it('calls the /tags endpoint at wiki level', async () => {
@@ -960,7 +984,7 @@ describe('getPagesByTag', () => {
       ],
     }));
 
-    const pages = await new XWikiClient().getPagesByTag('PM', 50);
+    const pages = await new XWikiClient().getPagesByTag('howto', 50);
 
     expect(pages).toHaveLength(2);
     expect(pages[0].title).toBe('Handbook');
@@ -1132,15 +1156,15 @@ describe('getObjectProperty', () => {
 
   it('returns the named property value from root-level response', async () => {
     vi.stubGlobal('fetch', mockFetch({
-      name: 'UUID',
-      value: 'abc-123-def-456',
+      name: 'priority',
+      value: 'high',
       type: 'String',
       attributes: [],
     }));
 
-    const prop = await new XWikiClient().getObjectProperty('Main', 'WebHome', 'TDcode.UUIDClass', 0, 'UUID');
-    expect(prop.name).toBe('UUID');
-    expect(prop.value).toBe('abc-123-def-456');
+    const prop = await new XWikiClient().getObjectProperty('Main', 'WebHome', 'Sandbox.Code.ExampleClass', 0, 'priority');
+    expect(prop.name).toBe('priority');
+    expect(prop.value).toBe('high');
     expect(prop.type).toBe('String');
   });
 

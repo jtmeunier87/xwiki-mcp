@@ -555,7 +555,14 @@ export class XWikiClient {
       id: data.id,
       name: data.name,
       property_count: (data.properties ?? []).length,
-      properties: (data.properties ?? []).map(p => ({ name: p.name, type: p.type })),
+      properties: (data.properties ?? []).map(p => {
+        // Keep non-empty attributes (prettyName, values, multiSelect, …) as a flat map.
+        const attributes: Record<string, string> = {};
+        for (const a of p.attributes ?? []) {
+          if (a.value !== undefined && a.value !== null && a.value !== '') attributes[a.name] = a.value;
+        }
+        return { name: p.name, type: p.type, attributes };
+      }),
     };
   }
 
@@ -750,7 +757,7 @@ export class XWikiClient {
    * Run an HQL or XWQL query against the wiki.
    * Endpoint: GET /wikis/xwiki/query?q=...&type=hql|xwql&number=N
    * Note: q should be just the WHERE clause — xWiki prepends SELECT.
-   * Example: "where doc.space = 'Main'" (HQL) or "where doc.author = 'XWiki.PercyProcess'" (XWQL)
+   * Example: "where doc.space = 'Main'" (HQL) or "where doc.author = 'XWiki.Admin'" (XWQL)
    */
   async advancedSearch(query: string, type: 'hql' | 'xwql' | 'solr' = 'xwql', limit = 20, start = 0): Promise<QueryResult[]> {
     // '/query' is relative to wikiBase (which is already .../wikis/xwiki)

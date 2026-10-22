@@ -6,9 +6,9 @@ import { XWikiError } from '../client.js';
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
     'xwiki_get_class',
-    'Get the full definition of a single XWiki class including all its properties, types, and attributes. Use list_classes first to discover available class names.',
+    'Get the full definition of a single XWiki class: each property with its type and non-empty attributes (e.g. prettyName, and for StaticList properties the allowed "values" and "multiSelect"). Use xwiki_list_classes first to discover available class names.',
     {
-      class_name: z.string().describe('Fully qualified class name (e.g. "XWiki.XWikiUsers" or "Administration Hub.Sales.Customer Profile.Code.ClientClass")'),
+      class_name: z.string().describe('Fully qualified class name (e.g. "XWiki.XWikiUsers" or "Sandbox.Code.ExampleClass")'),
     },
     async ({ class_name }) => {
       try {

@@ -255,6 +255,7 @@ export interface XWikiClass {
   properties: Array<{
     name: string;
     type?: string;
+    attributes?: Record<string, string>; // only from getClass
   }>;
 }
 

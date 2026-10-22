@@ -8,7 +8,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_download_attachment',
     'Download an attachment from a page. Returns the file content as a base64-encoded string along with MIME type and size.',
     {
-      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub.Finance")'),
+      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs.Guides")'),
       page: z.string().describe('Page name (e.g. "WebHome")'),
       filename: z.string().describe('Filename of the attachment to download (e.g. "report.pdf")'),
     },

@@ -8,7 +8,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_get_tags',
     'Get all tags applied to a page.',
     {
-      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Administration Hub")'),
+      space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs")'),
       page: z.string().describe('Page name (e.g. "WebHome")'),
     },
     async ({ space, page }) => {

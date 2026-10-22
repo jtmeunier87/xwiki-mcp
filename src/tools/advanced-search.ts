@@ -9,8 +9,8 @@ export function register(server: McpServer, client: XWikiClient): void {
 
 Query types:
 - hql: Hibernate Query Language WHERE clause. Example: "where doc.space = 'Main' and doc.author = 'XWiki.Admin'"
-- xwql: XWiki Query Language WHERE clause (preferred). Example: "where doc.author = 'XWiki.PercyProcess' order by doc.date desc"
-- solr: Full-text Solr query. Example: "type:DOCUMENT AND space:Main AND title:Meeting"
+- xwql: XWiki Query Language WHERE clause (preferred). Example: "where doc.author = 'XWiki.Admin' order by doc.date desc"
+- solr: Full-text Solr query. Example: "type:DOCUMENT AND space:Main AND title:Release"
 
 For HQL and XWQL, provide ONLY the WHERE clause — xWiki automatically prepends "select doc.fullName from XWikiDocument as doc".`,
     {
