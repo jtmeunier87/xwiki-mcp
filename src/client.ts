@@ -652,10 +652,7 @@ export class XWikiClient {
   ): Promise<XWikiObjectWriteResult> {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects`;
 
-    const propElements = Object.entries(properties)
-      .map(([name, value]) =>
-        `  <property><name>${this.escapeXml(name)}</name><value>${this.escapeXml(value)}</value></property>`)
-      .join('\n');
+    const propElements = this.propertiesXml(properties);
 
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -695,10 +692,7 @@ export class XWikiClient {
   ): Promise<XWikiObjectWriteResult> {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}`;
 
-    const propElements = Object.entries(properties)
-      .map(([name, value]) =>
-        `  <property><name>${this.escapeXml(name)}</name><value>${this.escapeXml(value)}</value></property>`)
-      .join('\n');
+    const propElements = this.propertiesXml(properties);
 
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
@@ -957,6 +951,18 @@ export class XWikiClient {
   }
 
   /** Escape special XML characters in content */
+  /**
+   * Object properties as xWiki REST XML. The property name is an ATTRIBUTE
+   * (<property name="x">), not a child element: xWiki ignores a <name>
+   * element and saves the object with no values.
+   */
+  private propertiesXml(properties: Record<string, string>): string {
+    return Object.entries(properties)
+      .map(([name, value]) =>
+        `  <property name="${this.escapeXml(name)}"><value>${this.escapeXml(value)}</value></property>`)
+      .join('\n');
+  }
+
   private escapeXml(s: string): string {
     return s
       .replace(/&/g, '&amp;')

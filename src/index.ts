@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from 'http';
 import { config } from './config.js';
+import { VERSION } from './version.js';
 import { XWikiClient } from './client.js';
 
 // Read tools (original)
@@ -61,7 +62,7 @@ const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 5
 async function buildServer(): Promise<McpServer> {
   const server = new McpServer({
     name: 'xwiki-mcp',
-    version: '0.7.0',
+    version: VERSION,
   });
 
   const client = new XWikiClient();
@@ -128,7 +129,7 @@ async function main() {
 
       if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', version: '0.7.0', tools: TOOL_COUNT }));
+        res.end(JSON.stringify({ status: 'ok', version: VERSION, tools: TOOL_COUNT }));
         return;
       }
 
@@ -148,7 +149,7 @@ async function main() {
     });
 
     httpServer.listen(httpPort, () => {
-      process.stderr.write(`xwiki-mcp v0.7.0 started in Streamable HTTP mode on port ${httpPort}\n`);
+      process.stderr.write(`xwiki-mcp v${VERSION} started in Streamable HTTP mode on port ${httpPort}\n`);
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
       process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
       process.stderr.write(`MCP endpoint: http://localhost:${httpPort}/mcp\n`);
@@ -160,7 +161,7 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
-    process.stderr.write(`xwiki-mcp v0.7.0 started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
+    process.stderr.write(`xwiki-mcp v${VERSION} started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
     process.stderr.write(`Registered ${TOOL_COUNT} tools (${TOOL_SUMMARY})\n`);
   }
 }

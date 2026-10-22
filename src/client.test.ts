@@ -504,7 +504,8 @@ describe('createObject', () => {
     expect(opts.method).toBe('POST');
     expect(opts.headers['Content-Type']).toBe('application/xml');
     expect(opts.body).toContain('<className>MyApp.MyClass</className>');
-    expect(opts.body).toContain('<name>name</name>');
+    expect(opts.body).toContain('<property name="name"><value>Test</value></property>');
+    expect(opts.body).not.toContain('<name>');
   });
 });
 
@@ -530,7 +531,18 @@ describe('updateObject', () => {
     expect(url).toContain('/objects/MyApp.MyClass/1');
     expect(opts.method).toBe('PUT');
     expect(opts.body).toContain('<number>1</number>');
-    expect(opts.body).toContain('inactive');
+    expect(opts.body).toContain('<property name="status"><value>inactive</value></property>');
+    expect(opts.body).not.toContain('<name>');
+  });
+
+  it('escapes property names and values', async () => {
+    const fetch = mockFetch({ className: 'MyApp.MyClass', number: 0 }, 202);
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().updateObject('Main', 'WebHome', 'MyApp.MyClass', 0, { 'a"b': 'x < y & z' });
+
+    const [, opts] = fetch.mock.calls[1];
+    expect(opts.body).toContain('<property name="a&quot;b"><value>x &lt; y &amp; z</value></property>');
   });
 });
 
