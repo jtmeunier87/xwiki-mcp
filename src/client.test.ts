@@ -1181,3 +1181,42 @@ describe('getObjectProperty', () => {
     expect(prop.value).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// rollbackPage
+// ---------------------------------------------------------------------------
+
+describe('rollbackPage', () => {
+  const history = (versions: string[]) => ({
+    historySummaries: versions.map(v => ({ version: v, modified: 1791907981000, modifier: 'xwiki:XWiki.Someone' })),
+  });
+
+  it('POSTs the rollback action with rev, confirm and form_token, then reports the new version', async () => {
+    const reply = (body: unknown, status = 200) => ({
+      ok: status >= 200 && status < 300, status, statusText: String(status),
+      json: () => Promise.resolve(body),
+      headers: { get: (k: string) => (k === 'XWiki-Form-Token' ? 'test-csrf-token' : null) },
+    });
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(reply(history(['3.1', '2.1', '1.1'])))  // history check (also caches the CSRF token)
+      .mockResolvedValueOnce(reply({}, 302))                          // rollback action
+      .mockResolvedValueOnce(reply(history(['4.1'])));                // new latest version
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().rollbackPage('Tool Record.Some Tool.Process Step', 'My Step', '2.1');
+
+    const [url, opts] = fetch.mock.calls[1];
+    const u = new URL(url);
+    expect(u.pathname).toBe('/bin/rollback/Tool%20Record/Some%20Tool/Process%20Step/My%20Step');
+    expect(u.searchParams.get('rev')).toBe('2.1');
+    expect(u.searchParams.get('confirm')).toBe('1');
+    expect(u.searchParams.get('form_token')).toBe('test-csrf-token');
+    expect(opts.method).toBe('POST');
+    expect(result).toEqual({ space: 'Tool Record.Some Tool.Process Step', page: 'My Step', rolled_back_to: '2.1', new_version: '4.1', status: 'rolled_back' });
+  });
+
+  it('refuses a version that is not in the page history', async () => {
+    vi.stubGlobal('fetch', mockFetch(history(['2.1', '1.1'])));
+    await expect(new XWikiClient().rollbackPage('Main', 'WebHome', '9.9')).rejects.toThrow('Version 9.9 not found');
+  });
+});

@@ -1,46 +1,5 @@
 import { config } from './config.js';
-import type {
-  XWikiSpacesResponse,
-  XWikiPagesResponse,
-  XWikiPageRaw,
-  XWikiSearchResponse,
-  XWikiAttachmentsResponse,
-  XWikiAttachmentRaw,
-  XWikiCommentsResponse,
-  XWikiCommentRaw,
-  XWikiTagsResponse,
-  XWikiClassesResponse,
-  XWikiClassRaw,
-  XWikiObjectsResponse,
-  XWikiObjectRaw,
-  XWikiHistoryResponse,
-  XWikiPageVersionRaw,
-  XWikiQueryResponse,
-  Space,
-  PageSummary,
-  Page,
-  PageWriteResult,
-  AttachmentWriteResult,
-  SearchResult,
-  Attachment,
-  Comment,
-  Pagination,
-  Tag,
-  XWikiClass,
-  XWikiObject,
-  XWikiObjectWriteResult,
-  HistorySummary,
-  QueryResult,
-  RenderResult,
-  RecentChange,
-  XWikiWikiTagsResponse,
-  XWikiTaggedPagesResponse,
-  XWikiWikiPagesResponse,
-  XWikiObjectPropertyResponse,
-  WikiTag,
-  ObjectProperty,
-  ExportResult,
-} from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult } from './types.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -727,6 +686,45 @@ export class XWikiClient {
       modifier: h.modifier ? h.modifier.replace(/^xwiki:XWiki\./, '') : undefined,
       comment: h.comment || undefined,
     }));
+  }
+
+  /**
+   * Roll a page back to an earlier version. xWiki saves the old version's
+   * content and objects as a new version, so nothing is lost.
+   * Uses the xWiki action URL (no REST endpoint exists for rollback):
+   * POST /bin/rollback/{space path}/{page}?rev={version}&confirm=1&form_token=...
+   */
+  async rollbackPage(space: string, page: string, version: string): Promise<RollbackResult> {
+    const history = await this.getPageHistory(space, page, 1000);
+    if (!history.some(h => h.version === version)) {
+      throw new XWikiError(`Version ${version} not found in the history of ${space}/${page}`, 404);
+    }
+
+    const actionPath = [...space.split('.'), page].map(encodeURIComponent).join('/');
+    const url = new URL(`${config.baseUrl}/bin/rollback/${actionPath}`);
+    url.searchParams.set('rev', version);
+    url.searchParams.set('confirm', '1');
+    const csrfToken = await this.getCsrfToken();
+    if (csrfToken) url.searchParams.set('form_token', csrfToken);
+
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { ...this.authHeaders() },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    }
+    // xWiki answers a successful rollback with a redirect to the page view.
+    if (response.status >= 400) {
+      throw new XWikiError(`Rollback failed: ${response.status} ${response.statusText}`, response.status);
+    }
+
+    const latest = (await this.getPageHistory(space, page, 1))[0];
+    return { space, page, rolled_back_to: version, new_version: latest?.version, status: 'rolled_back' };
   }
 
   /**

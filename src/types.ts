@@ -385,3 +385,11 @@ export interface ExportResult {
   content_type: string;
   size_bytes: number;
 }
+
+export interface RollbackResult {
+  space: string;
+  page: string;
+  rolled_back_to: string;
+  new_version?: string;
+  status: 'rolled_back';
+}

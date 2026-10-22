@@ -45,6 +45,7 @@ import { register as registerDeleteObject } from './tools/delete-object.js';
 // Phase 4: History, Query, Render, Recent Changes
 import { register as registerGetPageHistory } from './tools/get-page-history.js';
 import { register as registerGetPageVersion } from './tools/get-page-version.js';
+import { register as registerRollbackPage } from './tools/rollback-page.js';
 import { register as registerAdvancedSearch } from './tools/advanced-search.js';
 import { register as registerRenderPage } from './tools/render-page.js';
 import { register as registerGetRecentChanges } from './tools/get-recent-changes.js';
@@ -56,8 +57,8 @@ import { register as registerFindPages } from './tools/find-pages.js';
 import { register as registerExportPage } from './tools/export-page.js';
 import { register as registerGetObjectProperty } from './tools/get-object-property.js';
 
-const TOOL_COUNT = 33;
-const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 5 history/query/render, 5 wiki-level';
+const TOOL_COUNT = 34;
+const TOOL_SUMMARY = '6 read, 5 write, 3 attachment, 2 tag, 2 class, 5 object, 6 history/query/render, 5 wiki-level';
 
 async function buildServer(): Promise<McpServer> {
   const server = new McpServer({
@@ -105,6 +106,7 @@ async function buildServer(): Promise<McpServer> {
   // Phase 4 tools (5)
   registerGetPageHistory(server, client);
   registerGetPageVersion(server, client);
+  registerRollbackPage(server, client);
   registerAdvancedSearch(server, client);
   registerRenderPage(server, client);
   registerGetRecentChanges(server, client);

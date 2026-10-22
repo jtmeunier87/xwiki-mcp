@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), givin
 
 ---
 
-## 33 Tools across 7 categories
+## 34 Tools across 7 categories
 
 | Category | Count | Tools |
 |---|---|---|
@@ -15,7 +15,7 @@ A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), givin
 | **Attachments** | 4 | `get_attachments`, `upload_attachment`, `download_attachment`, `delete_attachment` |
 | **Tags** | 2 | `get_tags`, `add_tags` |
 | **Classes & Objects** | 7 | `list_classes`, `get_class`, `list_objects`, `get_object`, `create_object`, `update_object`, `delete_object` |
-| **History & Query** | 5 | `get_page_history`, `get_page_version`, `advanced_search`, `render_page`, `get_recent_changes` |
+| **History & Query** | 6 | `get_page_history`, `get_page_version`, `rollback_page`, `advanced_search`, `render_page`, `get_recent_changes` |
 | **Wiki-Level** | 5 | `get_all_wiki_tags`, `get_pages_by_tag`, `find_pages`, `export_page`, `get_object_property` |
 
 ---
@@ -157,6 +157,9 @@ List all revisions of a page — version string, timestamp, author, edit comment
 
 #### `get_page_version`
 Retrieve full page content at a specific historical version (e.g. `3.1`).
+
+#### `rollback_page`
+Roll a page back to an earlier version (content and objects). xWiki saves the old version as a new version, so history is kept. Uses the `/bin/rollback/` action URL with the CSRF token.
 
 #### `advanced_search`
 Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`.
