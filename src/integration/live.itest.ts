@@ -199,7 +199,7 @@ describe.skipIf(!URL_)('live XWiki', () => {
     });
     expect(o).toMatchObject({ verified: true, target: 'XWiki.StyleSheetExtension[0].code' });
     const code = await call('xwiki_get_object_property', { space: sp, page: 'Sheet', class_name: 'XWiki.StyleSheetExtension', property_name: 'code' });
-    expect(code.value).toBe('.a { color: red; }\n.b { color: blue; }');
+    expect(code.property.value).toBe('.a { color: red; }\n.b { color: blue; }');
   });
 
   it('keeps tags and comments in step', async () => {
