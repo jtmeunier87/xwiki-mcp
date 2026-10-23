@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { pageOf } from './paging.js';
 import { fileContent } from './files.js';
+
+// The tool modules load the client, which reads its config at import; don't need real env vars.
+vi.mock('../config.js', () => ({ config: { baseUrl: 'https://wiki.example.com', pageLimit: 50, maxFileBytes: 1024 } }));
 
 describe('pageOf', () => {
   it('slices a list and reports the exact total', () => {
