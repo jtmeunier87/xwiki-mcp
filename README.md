@@ -352,7 +352,7 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test        # 127 unit tests (mocked fetch)
+npm test        # 140 unit tests (mocked fetch)
 ```
 
 Integration tests run the built server against a real XWiki. CI does this on every push against the official Docker images (current LTS and stable); locally:
@@ -365,6 +365,8 @@ docker rm -f xwiki-it xwiki-it-db && docker network rm xwiki-it
 ```
 
 They write only under a fresh `IT.Run<timestamp>` space. Point them at a disposable wiki, never a production one.
+
+After deploying a release, test it against your own wiki with the live test plan in [TESTING.md](TESTING.md). That file also has the rules (stop if the deployment is not current; write only in an empty throwaway space; create pages only as the plan says), the test order, how to fix a failure, and where issues go.
 
 ---
 
