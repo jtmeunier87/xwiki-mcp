@@ -1259,16 +1259,16 @@ describe('rollbackPage', () => {
       .mockResolvedValueOnce(reply(history(['4.1'])));                // new latest version
     vi.stubGlobal('fetch', fetch);
 
-    const result = await new XWikiClient().rollbackPage('Tool Record.Some Tool.Process Step', 'My Step', '2.1');
+    const result = await new XWikiClient().rollbackPage('Docs.User Guides.Setup', 'My Page', '2.1');
 
     const [url, opts] = fetch.mock.calls[1];
     const u = new URL(url);
-    expect(u.pathname).toBe('/bin/rollback/Tool%20Record/Some%20Tool/Process%20Step/My%20Step');
+    expect(u.pathname).toBe('/bin/rollback/Docs/User%20Guides/Setup/My%20Page');
     expect(u.searchParams.get('rev')).toBe('2.1');
     expect(u.searchParams.get('confirm')).toBe('1');
     expect(u.searchParams.get('form_token')).toBe('test-csrf-token');
     expect(opts.method).toBe('POST');
-    expect(result).toEqual({ space: 'Tool Record.Some Tool.Process Step', page: 'My Step', rolled_back_to: '2.1', new_version: '4.1', status: 'rolled_back' });
+    expect(result).toEqual({ space: 'Docs.User Guides.Setup', page: 'My Page', rolled_back_to: '2.1', new_version: '4.1', status: 'rolled_back' });
   });
 
   it('refuses a version that is not in the page history', async () => {

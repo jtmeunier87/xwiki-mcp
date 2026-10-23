@@ -74,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.17.0
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.18.0
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
