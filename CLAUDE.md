@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP (Model Context Protocol) server that gives AI agents read/write access to an XWiki instance through its REST API. TypeScript, `@modelcontextprotocol/sdk`, stdio or Streamable HTTP transport. 42 tools, all prefixed `xwiki_`; README.md is the tool reference.
+MCP (Model Context Protocol) server that gives AI agents read/write access to an XWiki instance through its REST API. TypeScript, `@modelcontextprotocol/sdk`, stdio or Streamable HTTP transport. 52 tools, all prefixed `xwiki_`; README.md is the tool reference.
 
 **This is a public, generic tool.** Never add anything specific to one organisation or wiki: no real space, page, class, user, tag or host names, and no description of how a particular wiki uses its pages or objects. Examples in tool descriptions, tests and docs use neutral names (`Main`, `Sandbox`, `Docs.Guides`, `Sandbox.Code.ExampleClass`, `XWiki.Admin`, `XWiki.JaneDoe`, `wiki.example.com`).
 
@@ -53,7 +53,7 @@ XWIKI_MCP_ALLOW_DELETE  # true: also register delete tools (default: false)
 ## Access modes and security
 
 - Tools a mode excludes are not registered at all. `XWIKI_MCP_READ_ONLY` overrides `XWIKI_MCP_ALLOW_DELETE`.
-- Delete tools (`xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`) are off by default.
+- Delete tools (`xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`, `xwiki_delete_comment`) are off by default.
 - The HTTP mode has no authentication of its own. It must sit behind an authenticating proxy or on a private network; document this wherever HTTP deployment is described.
 
 ## XWiki REST API Specifics
@@ -65,7 +65,7 @@ XWIKI_MCP_ALLOW_DELETE  # true: also register delete tools (default: false)
 - **CSRF:** Writes need the `XWiki-Form-Token` header (cached from GET responses, refreshed on 403)
 - **Object properties:** Write them as a form body (`property#name=value`); XML property bodies are accepted but not saved
 - **Classes:** The list endpoint returns `clazzs`; property attributes (e.g. StaticList `values`) come as `[{name, value}]`
-- **Action URLs:** `render_page`, `export_page`, `rollback_page`, `move_page` (`/bin/view/…?xpage=rename&step=2`) and the class editing tools (`/bin/propupdate`, `/bin/propadd`, fields `{property}_{attribute}` and `form_token`) use `/bin/…` action URLs, not REST
+- **Action URLs:** `render_page`, `export_page`, `rollback_page`, `move_page` (`?xpage=rename&step=2`), `copy_page` (`?xpage=copy`), `move_attachment` (`?xpage=attachment/move`), `restore_page` (`/bin/undelete/`), `list_deleted_pages` (`XWiki.DeletedDocumentsJSON`) and the class editing tools (`/bin/propupdate`, `/bin/propadd`, `/bin/propdisable`, `/bin/propenable`; fields `{property}_{attribute}` and `form_token`) use `/bin/…` action URLs, not REST
 
 Mocked tests cannot prove a write is saved. Verify write changes against a real XWiki before release.
 

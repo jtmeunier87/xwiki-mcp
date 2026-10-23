@@ -1632,3 +1632,281 @@ describe('getRequiredRights', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// v0.14 tools
+// ---------------------------------------------------------------------------
+
+/** Stateful mock: each route is a body, or a function of (url, init) returning { status, body, headers }. */
+type Reply = { status?: number; body?: unknown; headers?: Record<string, string> };
+function statefulFetch(routes: Record<string, Reply | ((u: URL, init?: RequestInit) => Reply)>) {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const u = new URL(url);
+    const key = `${init?.method ?? 'GET'} ${u.pathname.replace('/rest/wikis/xwiki', '')}`;
+    const route = routes[key];
+    const r: Reply = typeof route === 'function' ? route(u, init) : route ?? { status: 404 };
+    const status = r.status ?? 200;
+    const headers: Record<string, string> = { 'XWiki-Form-Token': 'test-csrf-token', ...(r.headers ?? {}) };
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: String(status),
+      json: () => Promise.resolve(r.body ?? {}),
+      arrayBuffer: () => Promise.resolve(new TextEncoder().encode(String(r.body ?? '')).buffer),
+      headers: { get: (k: string) => headers[k] ?? headers[k.toLowerCase()] ?? null },
+    });
+  });
+}
+const pageBody = (url: string) => ({ body: { id: 'x', fullName: 'x', title: 'T', content: '', syntax: 'xwiki/2.1', xwikiAbsoluteUrl: url } });
+const formOf = (fetch: ReturnType<typeof vi.fn>, method = 'POST') =>
+  Object.fromEntries(new URLSearchParams(String(fetch.mock.calls.find(c => c[1]?.method === method)![1].body)));
+
+describe('copyPage', () => {
+  it('posts the copy form and confirms the copy', async () => {
+    let copied = false;
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Docs/spaces/Guides/pages/WebHome': pageBody('src'),
+      'GET /spaces/Docs/spaces/Manuals/pages/WebHome': () => (copied ? pageBody('https://wiki.example.com/bin/view/Docs/Manuals/') : { status: 404 }),
+      'POST /bin/view/Docs/Guides/WebHome': () => { copied = true; return { status: 302, headers: { location: '/bin/view/Docs/Guides/?xpage=copy&copyId=42' } }; },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().copyPage('Docs.Guides', 'WebHome', 'Docs.Manuals', 'WebHome', { newTitle: 'Manuals' });
+
+    expect(result).toEqual({ from: 'Docs.Guides.WebHome', to: 'Docs.Manuals.WebHome', children_copied: true, url: 'https://wiki.example.com/bin/view/Docs/Manuals/', status: 'copied' });
+    expect(formOf(fetch)).toMatchObject({
+      xpage: 'copy', sourceSpaceName: 'Docs.Guides', sourcePageName: 'WebHome', targetSpaceName: 'Docs',
+      targetPageName: 'Manuals', terminal: 'false', deep: 'true', targetPageTitle: 'Manuals', form_token: 'test-csrf-token',
+    });
+  });
+
+  it('refuses an existing target without posting', async () => {
+    const fetch = statefulFetch({
+      'GET /spaces/Docs/spaces/Guides/pages/Setup': pageBody('a'),
+      'GET /spaces/Docs/spaces/Guides/pages/Install': pageBody('b'),
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(new XWikiClient().copyPage('Docs.Guides', 'Setup', 'Docs.Guides', 'Install')).rejects.toMatchObject({ status: 409 });
+    expect(fetch.mock.calls.some(c => c[1]?.method === 'POST')).toBe(false);
+  });
+});
+
+describe('recycle bin', () => {
+  it('lists deleted pages with their recycle-bin ids', async () => {
+    const fetch = statefulFetch({
+      'GET /bin/get/XWiki/DeletedDocumentsJSON': {
+        body: {
+          totalrows: 3,
+          rows: [{
+            fullname: 'Docs.Guides.Setup', title: 'Setup', restoreUrl: '/bin/undelete/Docs/Guides/Setup?id=17&form_token=t',
+            canRestore: true, alreadyExists: false, date: '2026/10/20 10:00', deleter: 'XWiki.JaneDoe', language: '', batchId: 'b-1',
+          }],
+        },
+      },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const { pages, pagination } = await new XWikiClient().listDeletedPages('Guides', 0, 1);
+
+    expect(pages).toEqual([{ id: 17, page: 'Docs.Guides.Setup', title: 'Setup', language: undefined, deleted_by: 'JaneDoe', deleted_date: '2026/10/20 10:00', batch_id: 'b-1', can_restore: true, page_exists_again: false }]);
+    expect(pagination).toEqual({ total: 3, start: 0, limit: 1, has_more: true });
+    const url = new URL(fetch.mock.calls[0][0]);
+    expect(url.searchParams.get('ddoc.fullName')).toBe('Guides');
+    expect(url.searchParams.get('offset')).toBe('1');
+    expect(url.searchParams.get('reqNo')).toBe('1');
+  });
+
+  it('restores a page by id and confirms it exists', async () => {
+    let restored = false;
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Docs/spaces/Guides/pages/Setup': () => (restored ? pageBody('https://wiki.example.com/bin/view/Docs/Guides/Setup') : { status: 404 }),
+      'POST /bin/undelete/Docs/Guides/Setup': () => { restored = true; return { status: 302, headers: { location: '/bin/view/Docs/Guides/Setup' } }; },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().restorePage('Docs.Guides', 'Setup', 17);
+
+    expect(result).toEqual({ page: 'Docs.Guides.Setup', id: 17, url: 'https://wiki.example.com/bin/view/Docs/Guides/Setup', status: 'restored' });
+    expect(formOf(fetch)).toEqual({ id: '17', form_token: 'test-csrf-token' });
+  });
+
+  it('refuses to restore over an existing page', async () => {
+    vi.stubGlobal('fetch', statefulFetch({ 'GET /spaces/Docs/spaces/Guides/pages/Setup': pageBody('a') }));
+    await expect(new XWikiClient().restorePage('Docs.Guides', 'Setup', 17)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe('setClassPropertyEnabled', () => {
+  it('posts propdisable and checks the disabled flag', async () => {
+    let disabled = '0';
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /classes/Sandbox.Code.ExampleClass': () => ({ body: { id: 'Sandbox.Code.ExampleClass', name: 'Sandbox.Code.ExampleClass', properties: [{ name: 'status', type: 'String', attributes: [{ name: 'disabled', value: disabled }] }] } }),
+      'POST /bin/propdisable/Sandbox/Code/ExampleClass': () => { disabled = '1'; return { status: 302 }; },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().setClassPropertyEnabled('Sandbox.Code.ExampleClass', 'status', false);
+
+    expect(result).toEqual({ class_name: 'Sandbox.Code.ExampleClass', property: 'status', enabled: false, confirmed: true, status: 'disabled' });
+    expect(formOf(fetch)).toEqual({ propname: 'status', form_token: 'test-csrf-token' });
+  });
+
+  it('rejects an unknown property without posting', async () => {
+    const fetch = statefulFetch({ 'GET /classes/Sandbox.Code.ExampleClass': { body: { properties: [] } } });
+    vi.stubGlobal('fetch', fetch);
+    await expect(new XWikiClient().setClassPropertyEnabled('Sandbox.Code.ExampleClass', 'nope', true)).rejects.toMatchObject({ status: 404 });
+    expect(fetch.mock.calls.some(c => c[1]?.method === 'POST')).toBe(false);
+  });
+});
+
+describe('moveAttachment', () => {
+  it('posts the move form, polls the job and confirms the target', async () => {
+    let moved = false;
+    let polls = 0;
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Docs/spaces/Guides/pages/Setup/attachments': () => ({ body: { attachments: moved ? [] : [{ name: 'old.png' }] } }),
+      'GET /spaces/Docs/spaces/Guides/pages/Install/attachments': () => ({ body: { attachments: moved ? [{ name: 'new.png', xwikiAbsoluteUrl: 'https://wiki.example.com/download/new.png' }] : [] } }),
+      'POST /bin/view/Docs/Guides/Setup': () => ({ status: 302, headers: { location: '/bin/view/Docs/Guides/Setup?xpage=attachment%2Fmove&moveId=99' } }),
+      'GET /bin/get/Docs/Guides/Setup': (u) => {
+        expect(u.searchParams.get('moveId')).toBe('99');
+        polls++;
+        if (polls === 2) moved = true;
+        return { body: { state: polls < 2 ? 'RUNNING' : 'FINISHED', log: { items: [] } } };
+      },
+    });
+    vi.stubGlobal('fetch', fetch);
+    const client = new XWikiClient();
+    client.pollIntervalMs = 0;
+
+    const result = await client.moveAttachment('Docs.Guides', 'Setup', 'old.png', 'Docs.Guides', 'Install', 'new.png');
+
+    expect(result).toEqual({ from: 'Docs.Guides.Setup@old.png', to: 'Docs.Guides.Install@new.png', references_updated: true, redirect_left: false, download_url: 'https://wiki.example.com/download/new.png', status: 'moved' });
+    expect(polls).toBe(2);
+    expect(formOf(fetch)).toMatchObject({
+      xpage: 'attachment/move', step: '2', sourceLocation: 'Docs.Guides.Setup', sourceAttachmentName: 'old.png',
+      targetLocation: 'Docs.Guides.Install', targetAttachmentName: 'new.png', updateReferences: 'true', autoRedirect: 'false',
+    });
+  });
+
+  it('reports an error logged by the move job', async () => {
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Main/pages/WebHome/attachments': { body: { attachments: [{ name: 'a.png' }] } },
+      'POST /bin/view/Main/WebHome': { status: 302, headers: { location: '?moveId=1' } },
+      'GET /bin/get/Main/WebHome': { body: { state: 'FINISHED', log: { items: [{ level: 'error', renderedMessage: '<p>Disk full</p>' }] } } },
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(new XWikiClient().moveAttachment('Main', 'WebHome', 'a.png', 'Main', 'WebHome', 'b.png'))
+      .rejects.toThrow('Attachment move failed: Disk full');
+  });
+});
+
+describe('getAttachmentHistory / getClassPropertyValues', () => {
+  it('maps attachment versions', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /spaces/Main/pages/WebHome/attachments/a.png/history': { body: { attachments: [{ name: 'a.png', version: '1.2', longSize: 10, mimeType: 'image/png', author: 'xwiki:XWiki.JaneDoe', date: 1700000000000, xwikiAbsoluteUrl: 'u' }] } },
+    }));
+    const versions = await new XWikiClient().getAttachmentHistory('Main', 'WebHome', 'a.png');
+    expect(versions[0]).toMatchObject({ version: '1.2', size_bytes: 10, mime_type: 'image/png', author: 'JaneDoe', download_url: 'u' });
+  });
+
+  it('maps property values with labels and passes the filter', async () => {
+    const fetch = statefulFetch({
+      'GET /classes/Sandbox.Code.ExampleClass/properties/owner/values': { body: { propertyValues: [{ value: 'XWiki.JaneDoe', metaData: { label: 'Jane Doe' } }, { value: 'red', metaData: { label: 'red' } }] } },
+    });
+    vi.stubGlobal('fetch', fetch);
+    const values = await new XWikiClient().getClassPropertyValues('Sandbox.Code.ExampleClass', 'owner', 'Jan', 10);
+    expect(values).toEqual([{ value: 'XWiki.JaneDoe', label: 'Jane Doe' }, { value: 'red' }]);
+    const url = new URL(fetch.mock.calls[0][0]);
+    expect(url.searchParams.get('fp')).toBe('Jan');
+    expect(url.searchParams.get('limit')).toBe('10');
+  });
+});
+
+describe('comparePageVersions', () => {
+  it('diffs two versions and reports title changes', async () => {
+    const version = (v: string, title: string, content: string) => ({ body: { title, content, syntax: 'xwiki/2.1', version: v, author: 'XWiki.JaneDoe' } });
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /spaces/Main/pages/WebHome/history/1.1': version('1.1', 'Old', 'a\nb\nc\nd'),
+      'GET /spaces/Main/pages/WebHome/history/2.1': version('2.1', 'New', 'a\nB\nc\nd\ne'),
+    }));
+
+    const cmp = await new XWikiClient().comparePageVersions('Main', 'WebHome', '1.1', '2.1', 1);
+
+    expect(cmp.title_change).toEqual({ from: 'Old', to: 'New' });
+    expect(cmp.syntax_change).toBeUndefined();
+    expect(cmp.lines_added).toBe(2);
+    expect(cmp.lines_removed).toBe(1);
+    expect(cmp.diff).toBe('@@ -1,4 +1,5 @@\n a\n-b\n+B\n c\n d\n+e');
+  });
+});
+
+describe('unifiedDiff', () => {
+  it('returns nothing for identical text and splits distant changes into hunks', async () => {
+    const { unifiedDiff } = await import('./diff.js');
+    expect(unifiedDiff('x', 'x')).toEqual({ diff: '', added: 0, removed: 0 });
+    const before = Array.from({ length: 20 }, (_, i) => `l${i}`).join('\n');
+    const after = before.replace('l2', 'L2').replace('l17', 'L17');
+    const { diff } = unifiedDiff(before, after, 1);
+    expect(diff.split('\n').filter(l => l.startsWith('@@'))).toEqual(['@@ -2,3 +2,3 @@', '@@ -17,3 +17,3 @@']);
+  });
+});
+
+describe('comments', () => {
+  it('updates a comment through its XWikiComments object and reads it back', async () => {
+    let text = 'old';
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Main/pages/WebHome/objects/XWiki.XWikiComments/2': { body: { className: 'XWiki.XWikiComments', number: 2, properties: [] } },
+      'PUT /spaces/Main/pages/WebHome/objects/XWiki.XWikiComments/2': (_u, init) => { text = new URLSearchParams(String(init?.body)).get('property#comment') ?? ''; return { body: { className: 'XWiki.XWikiComments', number: 2, properties: [] } }; },
+      'GET /spaces/Main/pages/WebHome/comments': () => ({ body: { comments: [{ id: 2, text, author: 'XWiki.JaneDoe' }] } }),
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const comment = await new XWikiClient().updateComment('Main', 'WebHome', 2, 'new');
+
+    expect(comment).toMatchObject({ id: 2, text: 'new' });
+  });
+
+  it('deletes a comment object after checking it exists', async () => {
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Main/pages/WebHome/objects/XWiki.XWikiComments/2': { body: { className: 'XWiki.XWikiComments', number: 2 } },
+      'DELETE /spaces/Main/pages/WebHome/objects/XWiki.XWikiComments/2': { status: 204 },
+    });
+    vi.stubGlobal('fetch', fetch);
+    expect(await new XWikiClient().deleteComment('Main', 'WebHome', 2)).toEqual({ id: 2, status: 'deleted' });
+    expect(fetch.mock.calls.some(c => c[1]?.method === 'DELETE')).toBe(true);
+  });
+});
+
+describe('exportPage formats', () => {
+  it('POSTs a XAR export with the page and its children', async () => {
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'POST /bin/export/Docs/Guides/WebHome': { body: 'PK', headers: { 'content-type': 'application/zip' } },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().exportPage('Docs.Guides', 'WebHome', 'xar', { children: true, history: true });
+
+    expect(result).toMatchObject({ format: 'xar', content_type: 'application/zip', size_bytes: 2 });
+    const post = fetch.mock.calls.find(c => c[1]?.method === 'POST')!;
+    const form = new URLSearchParams(String(post[1].body));
+    expect(form.getAll('pages')).toEqual(['Docs.Guides.WebHome', 'Docs.Guides.%']);
+    expect(form.get('history')).toBe('true');
+    expect(new URL(post[0]).searchParams.get('format')).toBe('xar');
+  });
+
+  it('treats an HTML answer to a XAR export as refused', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET ': { body: {} },
+      'POST /bin/export/Main/WebHome': { body: '<html>', headers: { 'content-type': 'text/html;charset=UTF-8' } },
+    }));
+    await expect(new XWikiClient().exportPage('Main', 'WebHome', 'xar')).rejects.toThrow('needs wiki admin rights');
+  });
+});

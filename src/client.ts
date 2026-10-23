@@ -1,5 +1,6 @@
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
+import { unifiedDiff } from './diff.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -635,7 +636,7 @@ export class XWikiClient {
   }
 
   /** POST a class editor action URL with the CSRF token as form_token. */
-  private async postClassAction(action: 'propupdate' | 'propadd', className: string, form: URLSearchParams): Promise<void> {
+  private async postClassAction(action: 'propupdate' | 'propadd' | 'propdisable' | 'propenable', className: string, form: URLSearchParams): Promise<void> {
     const parts = className.split('.');
     if (parts.length < 2) throw new XWikiError(`Not a full class name: ${className}`, 400);
     const actionPath = parts.map(encodeURIComponent).join('/');
@@ -1110,31 +1111,50 @@ export class XWikiClient {
    * Uses the xWiki action URL: /bin/export/{space}/{page}?format=pdf
    * Returns base64-encoded binary content.
    */
-  async exportPage(space: string, page: string): Promise<ExportResult> {
-    const actionUrl = `${config.baseUrl}/bin/export/${encodeURIComponent(space)}/${encodeURIComponent(page)}`;
-    const url = new URL(actionUrl);
-    url.searchParams.set('format', 'pdf');
+  async exportPage(space: string, page: string, format: 'pdf' | 'xar' | 'html' = 'pdf', options: { children?: boolean; history?: boolean } = {}): Promise<ExportResult> {
+    const url = new URL(`${config.baseUrl}/bin/export/${this.actionPath(space, page)}`);
+    url.searchParams.set('format', format);
+    let init: RequestInit = { headers: { ...this.authHeaders() }, signal: AbortSignal.timeout(120_000) };
 
-    const response = await fetch(url.toString(), {
-      headers: { ...this.authHeaders() },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new XWikiError(`exportPage failed: ${response.statusText}`, response.status);
+    if (format !== 'pdf') {
+      // XAR and HTML exports must be POSTed; pages selects what goes in (% matches any characters).
+      const form = new URLSearchParams({ format, name: `${space}.${page}`, form_token: await this.getCsrfToken() });
+      form.append('pages', `${space}.${page}`);
+      if (options.children && page === 'WebHome') form.append('pages', `${space}.%`);
+      if (format === 'xar' && options.history) form.set('history', 'true');
+      init = { ...init, method: 'POST', headers: { ...this.authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() };
+    }
 
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    const content_base64 = Buffer.from(bytes).toString('base64');
-    const content_type = response.headers.get('content-type') ?? 'application/pdf';
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), init);
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new XWikiError(format === 'xar'
+        ? 'Permission error. XAR export needs wiki admin rights.'
+        : 'Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
+    }
+    if (!response.ok) throw new XWikiError(`exportPage failed: ${response.status} ${response.statusText}`, response.status);
 
+    const contentType = response.headers.get('content-type') ?? '';
+    if (format !== 'pdf' && contentType.startsWith('text/html')) {
+      // XWiki answers an export it refused (rights, nothing selected) with an HTML page.
+      throw new XWikiError(`exportPage failed: XWiki returned a page instead of a ${format} file. ${format === 'xar' ? 'XAR export needs wiki admin rights.' : ''}`.trim(), 500);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const defaults = { pdf: 'application/pdf', xar: 'application/zip', html: 'application/zip' };
     return {
       space,
       page,
-      format: 'pdf',
-      content_base64,
-      content_type,
+      format,
+      content_base64: Buffer.from(bytes).toString('base64'),
+      content_type: contentType || defaults[format],
       size_bytes: bytes.length,
     };
   }
+
 
   /**
    * Get a single named property from an XObject.
@@ -1279,24 +1299,14 @@ export class XWikiClient {
     const to = `${targetSpace}.${targetPage}`;
     if (from === to) throw new XWikiError(`Source and target are the same page: ${from}`, 400);
 
-    // The rename form names the target by parent space + name; for a nested (WebHome)
-    // target the name is its last space.
-    const terminal = targetPage !== 'WebHome';
-    const i = targetSpace.lastIndexOf('.');
-    const newSpaceName = terminal ? targetSpace : (i > 0 ? targetSpace.slice(0, i) : '');
-    const newPageName = terminal ? targetPage : targetSpace.slice(i + 1);
+    const { terminal, spaceName: newSpaceName, pageName: newPageName } = this.refactoringTarget(targetSpace, targetPage);
     const children = options.children ?? true;
     const updateLinks = options.updateLinks ?? true;
     const autoRedirect = options.autoRedirect ?? false;
 
     // The source must exist (REST 404 otherwise) and the target must not.
     await this.getPage(space, page);
-    try {
-      await this.getPage(targetSpace, targetPage);
-      throw new XWikiError(`Target page already exists: ${to}`, 409);
-    } catch (e) {
-      if (!(e instanceof XWikiError && e.status === 404)) throw e;
-    }
+    await this.expectMissing(targetSpace, targetPage, to);
 
     const form = new URLSearchParams({
       xpage: 'rename',
@@ -1311,34 +1321,12 @@ export class XWikiClient {
     });
     if (options.newTitle) form.set('newPageTitle', options.newTitle);
 
-    const actionPath = [...space.split('.'), page].map(encodeURIComponent).join('/');
-    const url = `${config.baseUrl}/bin/view/${actionPath}`;
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { ...this.authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form.toString(),
-        redirect: 'manual',
-        signal: AbortSignal.timeout(120_000),
-      });
-    } catch {
-      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new XWikiError('Authentication or permission error. Moving a page needs delete right on it and edit right on the target.', response.status);
-    }
+    const response = await this.postPageAction('view', space, page, form, 120_000,
+      'Moving a page needs delete right on it and edit right on the target.');
     if (response.status === 409) throw new XWikiError(`Target page already exists: ${to}`, 409);
-    if (response.status >= 400) {
-      throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
-    }
     // Success redirects to the rename status page (renameId); anything else means the
     // form was shown again (e.g. a stale form_token) and nothing moved.
-    const location = response.headers.get('location') ?? '';
-    if (!(response.status >= 300 && response.status < 400 && location.includes('renameId'))) {
-      this.csrfToken = null;
-      throw new XWikiError(`Move was not started (HTTP ${response.status}). Nothing was changed; try again.`, response.status);
-    }
+    this.expectRedirect(response, 'renameId', 'Move');
 
     // The job ran before the redirect; confirm the result from the target page.
     let moved: Page;
@@ -1396,6 +1384,360 @@ export class XWikiClient {
         })),
       })),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // v0.14: copy, recycle bin, property state, attachment move/history,
+  // property values, version compare, comment edit/delete
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Copy a page (and, for a nested page, optionally its children) to a new reference.
+   * Uses the copy form: /bin/view/{spaces}/{page}?xpage=copy (form_token required),
+   * which runs the copy job and waits for it. Needs view right on the source and edit
+   * right on the target. Same target naming as movePage.
+   */
+  async copyPage(
+    space: string,
+    page: string,
+    targetSpace: string,
+    targetPage: string,
+    options: { children?: boolean; newTitle?: string } = {},
+  ): Promise<CopyPageResult> {
+    const from = `${space}.${page}`;
+    const to = `${targetSpace}.${targetPage}`;
+    if (from === to) throw new XWikiError(`Source and target are the same page: ${from}`, 400);
+    const { terminal, spaceName, pageName } = this.refactoringTarget(targetSpace, targetPage);
+    const children = options.children ?? true;
+
+    await this.getPage(space, page);
+    await this.expectMissing(targetSpace, targetPage, to);
+
+    const form = new URLSearchParams({
+      xpage: 'copy',
+      sourceSpaceName: space,
+      sourcePageName: page,
+      targetSpaceName: spaceName,
+      targetPageName: pageName,
+      terminal: String(terminal),
+      deep: String(children),
+      form_token: await this.getCsrfToken(),
+    });
+    if (options.newTitle) form.set('targetPageTitle', options.newTitle);
+
+    const response = await this.postPageAction('view', space, page, form, 120_000,
+      'Copying a page needs view right on it and edit right on the target.');
+    this.expectRedirect(response, 'copyId', 'Copy');
+
+    const copied = await this.getPage(targetSpace, targetPage).catch(e => {
+      if (e instanceof XWikiError && e.status === 404) {
+        throw new XWikiError(`Copy did not complete: ${to} does not exist. Check the page's copy status in the wiki.`, 500);
+      }
+      throw e;
+    });
+    return { from, to, children_copied: children && !terminal, url: copied.url, status: 'copied' };
+  }
+
+  /**
+   * List pages in the recycle bin, newest first.
+   * There is no REST endpoint; this reads the JSON service page behind the wiki's
+   * Deleted Documents view: /bin/get/XWiki/DeletedDocumentsJSON?list=1&xpage=plain
+   * name filters the page reference (part of it, case-insensitive).
+   */
+  async listDeletedPages(name: string | undefined, start = 0, limit = 25): Promise<{ pages: DeletedPage[]; pagination: Pagination }> {
+    const url = new URL(`${config.baseUrl}/bin/get/XWiki/DeletedDocumentsJSON`);
+    const params: Record<string, string> = {
+      list: '1', xpage: 'plain', outputSyntax: 'plain', reqNo: '1',
+      offset: String(start + 1), limit: String(limit), sort: 'ddoc.date', dir: 'desc',
+    };
+    if (name) params['ddoc.fullName'] = name;
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    const data = await this.fetchActionJson<XWikiDeletedDocumentsResponse>(url.toString());
+    const rows = data.rows ?? [];
+    return {
+      pages: rows.map(r => ({
+        id: Number(/[?&]id=(\d+)/.exec(r.restoreUrl ?? '')?.[1] ?? NaN),
+        page: r.fullname,
+        title: r.title || undefined,
+        language: r.language || undefined,
+        deleted_by: (r.deleter ?? '').replace(/^xwiki:XWiki\./, '').replace(/^XWiki\./, '') || undefined,
+        deleted_date: r.date || undefined,
+        batch_id: r.batchId || undefined,
+        can_restore: r.canRestore ?? false,
+        page_exists_again: r.alreadyExists ?? false,
+      })),
+      pagination: { total: data.totalrows, start, limit, has_more: start + rows.length < (data.totalrows ?? 0) },
+    };
+  }
+
+  /**
+   * Restore a page from the recycle bin by its recycle-bin id (from listDeletedPages).
+   * Action URL: /bin/undelete/{spaces}/{page}?id={id} (form_token required). Refused if a
+   * page exists at that reference again. Restores only that entry, not the rest of its batch.
+   */
+  async restorePage(space: string, page: string, id: number): Promise<RestorePageResult> {
+    const ref = `${space}.${page}`;
+    await this.expectMissing(space, page, ref, 'A page exists at that reference again; move or rename it first');
+    const form = new URLSearchParams({ id: String(id), form_token: await this.getCsrfToken() });
+    const response = await this.postPageAction('undelete', space, page, form, 60_000,
+      'Restoring a page needs the right to undelete it (usually its deleter or an admin).');
+    if (!(response.status >= 300 && response.status < 400)) {
+      this.csrfToken = null;
+      throw new XWikiError(`Restore was not started (HTTP ${response.status}). Nothing was changed.`, response.status);
+    }
+    const restored = await this.getPage(space, page).catch(e => {
+      if (e instanceof XWikiError && e.status === 404) {
+        throw new XWikiError(`Restore did not complete: ${ref} does not exist. Check that recycle-bin id ${id} is this page's.`, 500);
+      }
+      throw e;
+    });
+    return { page: ref, id, url: restored.url, status: 'restored' };
+  }
+
+  /**
+   * Disable or enable a class property. A disabled property is hidden from forms and
+   * new objects; existing values are kept. Action URLs /bin/propdisable/ and /bin/propenable/.
+   */
+  async setClassPropertyEnabled(className: string, property: string, enabled: boolean): Promise<ClassPropertyStateResult> {
+    const before = await this.getClass(className);
+    if (!before.properties.some(p => p.name === property)) {
+      throw new XWikiError(`Property '${property}' not found in class ${className}`, 404);
+    }
+    await this.postClassAction(enabled ? 'propenable' : 'propdisable', className, new URLSearchParams({ propname: property }));
+    const after = await this.getClass(className);
+    const disabled = after.properties.find(p => p.name === property)?.attributes?.['disabled'];
+    if (disabled !== undefined && (disabled === '1') === enabled) {
+      throw new XWikiError(`Property '${property}' was not ${enabled ? 'enabled' : 'disabled'}; read back disabled=${disabled}`, 500);
+    }
+    return { class_name: className, property, enabled, confirmed: disabled !== undefined, status: enabled ? 'enabled' : 'disabled' };
+  }
+
+  /**
+   * Move or rename an attachment, optionally to another page.
+   * Uses the attachment move form (/bin/view/{page}?xpage=attachment/move&step=2), which
+   * starts a background job; its status is polled until it finishes, then the target is read back.
+   */
+  async moveAttachment(
+    space: string,
+    page: string,
+    filename: string,
+    targetSpace: string,
+    targetPage: string,
+    targetFilename: string,
+    options: { updateReferences?: boolean; autoRedirect?: boolean } = {},
+  ): Promise<AttachmentMoveResult> {
+    const from = `${space}.${page}@${filename}`;
+    const to = `${targetSpace}.${targetPage}@${targetFilename}`;
+    if (from === to) throw new XWikiError(`Source and target are the same attachment: ${from}`, 400);
+    const updateReferences = options.updateReferences ?? true;
+    const autoRedirect = options.autoRedirect ?? false;
+
+    const source = await this.getAttachments(space, page);
+    if (!source.some(a => a.name === filename)) throw new XWikiError(`Attachment not found: ${from}`, 404);
+    const existing = await this.getAttachments(targetSpace, targetPage);
+    if (existing.some(a => a.name === targetFilename)) throw new XWikiError(`Target attachment already exists: ${to}`, 409);
+
+    const form = new URLSearchParams({
+      xpage: 'attachment/move',
+      step: '2',
+      sourceLocation: `${space}.${page}`,
+      sourceAttachmentName: filename,
+      targetLocation: `${targetSpace}.${targetPage}`,
+      targetAttachmentName: targetFilename,
+      updateReferences: String(updateReferences),
+      autoRedirect: String(autoRedirect),
+      form_token: await this.getCsrfToken(),
+    });
+    const response = await this.postPageAction('view', space, page, form, 60_000,
+      'Moving an attachment needs edit right on both pages.');
+    if (response.status === 409) throw new XWikiError(`Target attachment already exists: ${to}`, 409);
+    const moveId = this.expectRedirect(response, 'moveId', 'Attachment move');
+
+    // Poll the move job until it leaves the running states.
+    const statusUrl = new URL(`${config.baseUrl}/bin/get/${this.actionPath(space, page)}`);
+    statusUrl.searchParams.set('xpage', 'attachment/move');
+    statusUrl.searchParams.set('moveId', moveId);
+    let state = '';
+    for (let i = 0; i < 60; i++) {
+      const job = await this.fetchActionJson<{ state?: string; log?: { items?: Array<{ level: string; renderedMessage?: string }> } }>(statusUrl.toString());
+      state = job.state ?? '';
+      const error = job.log?.items?.find(l => l.level === 'error');
+      if (error) throw new XWikiError(`Attachment move failed: ${(error.renderedMessage ?? '').replace(/<[^>]*>/g, '').trim()}`, 500);
+      if (state === 'FINISHED') break;
+      await new Promise(r => setTimeout(r, this.pollIntervalMs));
+    }
+    if (state !== 'FINISHED') throw new XWikiError(`Attachment move still running (state ${state || 'unknown'}); check ${to} later.`, 500);
+
+    const moved = (await this.getAttachments(targetSpace, targetPage)).find(a => a.name === targetFilename);
+    if (!moved) throw new XWikiError(`Attachment move did not complete: ${to} does not exist.`, 500);
+    return { from, to, references_updated: updateReferences, redirect_left: autoRedirect, download_url: moved.download_url, status: 'moved' };
+  }
+
+  /** Poll interval for background jobs (overridden in tests). */
+  pollIntervalMs = 1000;
+
+  /**
+   * Version history of one attachment, newest first.
+   * Endpoint: GET /spaces/.../pages/{pg}/attachments/{name}/history
+   */
+  async getAttachmentHistory(space: string, page: string, filename: string): Promise<AttachmentVersion[]> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/attachments/${encodeURIComponent(filename)}/history`;
+    const data = await this.get<{ attachments?: Array<XWikiAttachmentRaw & { version?: string }> }>(path);
+    return (data.attachments ?? []).map(a => ({
+      version: a.version,
+      size_bytes: a.longSize ?? a.size,
+      mime_type: a.mimeType,
+      author: a.author?.replace(/^xwiki:XWiki\./, ''),
+      date: a.date != null ? this.parseTimestamp(a.date) : undefined,
+      download_url: a.xwikiAbsoluteUrl ?? '',
+    }));
+  }
+
+  /**
+   * Allowed values of a class property whose values come from elsewhere: a database list
+   * (DBList, DBTreeList), page, user or group pickers. StaticList values are in getClass.
+   * Endpoint: GET /classes/{class}/properties/{prop}/values?limit=&fp=
+   */
+  async getClassPropertyValues(className: string, property: string, filter?: string, limit = 100): Promise<ClassPropertyValue[]> {
+    const params: Record<string, string | number> = { limit };
+    if (filter) params['fp'] = filter;
+    const data = await this.get<{ propertyValues?: Array<{ value: unknown; metaData?: Record<string, unknown> }> }>(
+      `/classes/${encodeURIComponent(className)}/properties/${encodeURIComponent(property)}/values`, params);
+    return (data.propertyValues ?? []).map(v => {
+      const label = v.metaData?.['label'];
+      return { value: v.value, ...(label !== undefined && label !== v.value ? { label: String(label) } : {}) };
+    });
+  }
+
+  /**
+   * Compare two versions of a page: a unified diff of the content plus title and author changes.
+   * toVersion defaults to the current version. The diff is computed here; XWiki's REST API has none.
+   */
+  async comparePageVersions(space: string, page: string, fromVersion: string, toVersion?: string, context = 3): Promise<VersionComparison> {
+    const a = await this.getPageVersion(space, page, fromVersion);
+    const b = toVersion ? await this.getPageVersion(space, page, toVersion) : await this.getPage(space, page);
+    const { diff, added, removed } = unifiedDiff(a.content, b.content, context);
+    return {
+      page: `${space}.${page}`,
+      from: { version: a.version ?? fromVersion, author: a.author, date: a.modified_date },
+      to: { version: b.version ?? toVersion ?? 'current', author: b.author, date: b.modified_date },
+      ...(a.title !== b.title ? { title_change: { from: a.title, to: b.title } } : {}),
+      ...(a.syntax !== b.syntax ? { syntax_change: { from: a.syntax, to: b.syntax } } : {}),
+      lines_added: added,
+      lines_removed: removed,
+      diff,
+    };
+  }
+
+  /**
+   * Edit a comment's text. Comments are XWiki.XWikiComments objects; the comment id is the object number.
+   */
+  async updateComment(space: string, page: string, id: number, text: string): Promise<Comment> {
+    await this.getObject(space, page, 'XWiki.XWikiComments', id);
+    await this.updateObject(space, page, 'XWiki.XWikiComments', id, { comment: text });
+    const after = (await this.getComments(space, page)).find(c => c.id === id);
+    if (!after || after.text !== text) throw new XWikiError(`Comment ${id} was not updated; read back a different text.`, 500);
+    return after;
+  }
+
+  /**
+   * Delete a comment (its XWiki.XWikiComments object). Replies to it are kept.
+   */
+  async deleteComment(space: string, page: string, id: number): Promise<{ id: number; status: 'deleted' }> {
+    await this.getObject(space, page, 'XWiki.XWikiComments', id);
+    await this.deleteObject(space, page, 'XWiki.XWikiComments', id);
+    return { id, status: 'deleted' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Action URL helpers (refactoring forms)
+  // ---------------------------------------------------------------------------
+
+  /** "/Docs/Guides/Setup" style path for /bin/{action}/ URLs. */
+  private actionPath(space: string, page: string): string {
+    return [...space.split('.'), page].map(encodeURIComponent).join('/');
+  }
+
+  /**
+   * The rename and copy forms name the target by parent space + name; for a nested
+   * (WebHome) target the name is its last space.
+   */
+  private refactoringTarget(targetSpace: string, targetPage: string): { terminal: boolean; spaceName: string; pageName: string } {
+    const terminal = targetPage !== 'WebHome';
+    const i = targetSpace.lastIndexOf('.');
+    return {
+      terminal,
+      spaceName: terminal ? targetSpace : (i > 0 ? targetSpace.slice(0, i) : ''),
+      pageName: terminal ? targetPage : targetSpace.slice(i + 1),
+    };
+  }
+
+  /** Throw 409 if a page exists at the reference (REST 404 means it is free). */
+  private async expectMissing(space: string, page: string, ref: string, message = 'Target page already exists'): Promise<void> {
+    try {
+      await this.getPage(space, page);
+    } catch (e) {
+      if (e instanceof XWikiError && e.status === 404) return;
+      throw e;
+    }
+    throw new XWikiError(`${message}: ${ref}`, 409);
+  }
+
+  /** POST a form to /bin/{action}/{page} without following redirects. */
+  private async postPageAction(action: string, space: string, page: string, form: URLSearchParams, timeoutMs: number, rightsHint: string): Promise<Response> {
+    const url = `${config.baseUrl}/bin/${action}/${this.actionPath(space, page)}`;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { ...this.authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new XWikiError(`Authentication or permission error. ${rightsHint}`, response.status);
+    }
+    if (response.status >= 400 && response.status !== 409) {
+      throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
+    }
+    return response;
+  }
+
+  /**
+   * A refactoring form redirects to its status page with the job id (renameId, copyId,
+   * moveId) when it started the job; otherwise it showed the form again (for example a
+   * stale form_token) and nothing changed. Returns the job id.
+   */
+  private expectRedirect(response: Response, idParam: string, what: string): string {
+    const location = response.headers.get('location') ?? '';
+    const id = new RegExp(`[?&]${idParam}=([^&]+)`).exec(location)?.[1];
+    if (!(response.status >= 300 && response.status < 400) || !id) {
+      this.csrfToken = null;
+      throw new XWikiError(`${what} was not started (HTTP ${response.status}). Nothing was changed; try again.`, response.status);
+    }
+    return decodeURIComponent(id);
+  }
+
+  /** GET a JSON response from an action URL (/bin/get/...). */
+  private async fetchActionJson<T>(url: string): Promise<T> {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { Accept: 'application/json', ...this.authHeaders() },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
+    }
+    if (!response.ok) throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
+    return response.json() as Promise<T>;
   }
 
   // ---------------------------------------------------------------------------

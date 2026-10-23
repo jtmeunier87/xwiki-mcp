@@ -513,3 +513,92 @@ export interface RequiredRightsReport {
   /** What in the page needs each right (plain-text summaries) */
   findings: Array<{ entity: string; summary: string; rights: Array<{ right: string; entity_type?: string; manual_review: boolean }> }>;
 }
+
+export interface CopyPageResult {
+  from: string;
+  to: string;
+  children_copied: boolean;
+  url?: string;
+  status: 'copied';
+}
+
+export interface XWikiDeletedDocumentsResponse {
+  totalrows?: number;
+  rows?: Array<{
+    fullname: string;
+    title?: string;
+    restoreUrl?: string;
+    canRestore?: boolean;
+    alreadyExists?: boolean;
+    date?: string;
+    deleter?: string;
+    language?: string;
+    batchId?: string;
+  }>;
+}
+
+export interface DeletedPage {
+  /** Recycle-bin id, passed to xwiki_restore_page */
+  id: number;
+  page: string;
+  title?: string;
+  language?: string;
+  deleted_by?: string;
+  deleted_date?: string;
+  /** Pages deleted together share a batch id */
+  batch_id?: string;
+  can_restore: boolean;
+  /** A page exists at the reference again, so it cannot be restored there */
+  page_exists_again: boolean;
+}
+
+export interface RestorePageResult {
+  page: string;
+  id: number;
+  url?: string;
+  status: 'restored';
+}
+
+export interface ClassPropertyStateResult {
+  class_name: string;
+  property: string;
+  enabled: boolean;
+  /** Whether the class read-back showed the property's disabled flag */
+  confirmed: boolean;
+  status: 'enabled' | 'disabled';
+}
+
+export interface AttachmentMoveResult {
+  from: string;
+  to: string;
+  references_updated: boolean;
+  redirect_left: boolean;
+  download_url: string;
+  status: 'moved';
+}
+
+export interface AttachmentVersion {
+  version?: string;
+  size_bytes?: number;
+  mime_type?: string;
+  author?: string;
+  date?: string;
+  download_url: string;
+}
+
+export interface ClassPropertyValue {
+  value: unknown;
+  label?: string;
+}
+
+export interface VersionComparison {
+  page: string;
+  from: { version: string; author?: string; date?: string };
+  to: { version: string; author?: string; date?: string };
+  title_change?: { from: string; to: string };
+  syntax_change?: { from: string; to: string };
+  lines_added: number;
+  lines_removed: number;
+  /** Unified diff of the page content ("" when identical) */
+  diff: string;
+}

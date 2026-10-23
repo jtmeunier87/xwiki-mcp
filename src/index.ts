@@ -67,6 +67,18 @@ import { register as registerSearchAttachments } from './tools/search-attachment
 import { register as registerMovePage } from './tools/move-page.js';
 import { register as registerGetRequiredRights } from './tools/get-required-rights.js';
 
+// v0.14: copy, recycle bin, property state, attachment move/history, values, compare, comments
+import { register as registerCopyPage } from './tools/copy-page.js';
+import { register as registerListDeletedPages } from './tools/list-deleted-pages.js';
+import { register as registerRestorePage } from './tools/restore-page.js';
+import { register as registerSetClassPropertyEnabled } from './tools/set-class-property-enabled.js';
+import { register as registerMoveAttachment } from './tools/move-attachment.js';
+import { register as registerGetAttachmentHistory } from './tools/get-attachment-history.js';
+import { register as registerGetClassPropertyValues } from './tools/get-class-property-values.js';
+import { register as registerComparePageVersions } from './tools/compare-page-versions.js';
+import { register as registerUpdateComment } from './tools/update-comment.js';
+import { register as registerDeleteComment } from './tools/delete-comment.js';
+
 type Access = 'read' | 'write' | 'delete';
 type Register = (server: McpServer, client: XWikiClient) => void;
 
@@ -86,17 +98,26 @@ const TOOLS: Array<[Access, Register]> = [
   ['write', registerCreatePage],
   ['write', registerUpdatePage],
   ['write', registerMovePage],
+  ['write', registerCopyPage],
   ['delete', registerDeletePage],
+
+  // Recycle bin
+  ['read', registerListDeletedPages],
+  ['write', registerRestorePage],
 
   // Comments
   ['read', registerGetComments],
   ['write', registerAddComment],
+  ['write', registerUpdateComment],
+  ['delete', registerDeleteComment],
 
   // Attachments
   ['read', registerGetAttachments],
   ['read', registerSearchAttachments],
+  ['read', registerGetAttachmentHistory],
   ['write', registerUploadAttachment],
   ['read', registerDownloadAttachment],
+  ['write', registerMoveAttachment],
   ['delete', registerDeleteAttachment],
 
   // Tags
@@ -109,8 +130,10 @@ const TOOLS: Array<[Access, Register]> = [
   // Classes
   ['read', registerListClasses],
   ['read', registerGetClass],
+  ['read', registerGetClassPropertyValues],
   ['write', registerUpdateClassProperties],
   ['write', registerAddClassProperty],
+  ['write', registerSetClassPropertyEnabled],
 
   // Objects
   ['read', registerListObjects],
@@ -124,6 +147,7 @@ const TOOLS: Array<[Access, Register]> = [
   // History
   ['read', registerGetPageHistory],
   ['read', registerGetPageVersion],
+  ['read', registerComparePageVersions],
   ['write', registerRollbackPage],
   ['read', registerGetRecentChanges],
 
