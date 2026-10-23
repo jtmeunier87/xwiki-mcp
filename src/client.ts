@@ -1,3 +1,4 @@
+import { inflateRawSync } from 'node:zlib';
 import { config } from './config.js';
 import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
 import { unifiedDiff } from './diff.js';
@@ -76,6 +77,12 @@ export class XWikiClient {
     }
     if (response.status === 401 || response.status === 403) {
       throw new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
+    }
+    if (response.status === 400) {
+      // XWiki explains a rejected request in a short text body (e.g. a query type not allowed).
+      const reason = (await Promise.resolve().then(() => response.text()).catch(() => '')).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const detail = reason && reason.length <= 500 ? `: ${reason}` : '';
+      throw new XWikiError(`XWiki rejected the request (400)${detail}. URL: ${urlStr}`, 400);
     }
     if (!response.ok) {
       throw new XWikiError(`XWiki server error: ${response.status}. URL: ${urlStr}`, response.status);
@@ -200,7 +207,7 @@ export class XWikiClient {
       content: data.content,
       syntax: data.syntax,
       author: data.contentAuthor ?? data.author,
-      modified_date: data.modified,
+      modified_date: data.modified != null ? this.parseTimestamp(data.modified) : undefined,
       version: data.version,
       parent: data.parent,
       url: data.xwikiAbsoluteUrl ?? '',
@@ -228,7 +235,7 @@ export class XWikiClient {
         space: r.space,
         url: docItem?.url ?? '',
         score: r.score,
-        modified_date: r.modified != null ? String(r.modified) : undefined,
+        modified_date: r.modified != null ? this.parseTimestamp(r.modified) : undefined,
       };
     });
     const total = data.totalResults;
@@ -251,7 +258,7 @@ export class XWikiClient {
       size_bytes: a.longSize ?? a.size,
       mime_type: a.mimeType,
       author: a.author,
-      date: a.date != null ? String(a.date) : undefined,
+      date: a.date != null ? this.parseTimestamp(a.date) : undefined,
       download_url: a.xwikiAbsoluteUrl ?? '',
     }));
   }
@@ -382,7 +389,7 @@ export class XWikiClient {
       return {
         id: data.id,
         author: data.author,
-        date: data.date != null ? String(data.date) : undefined,
+        date: data.date != null ? this.parseTimestamp(data.date) : undefined,
         text: data.text ?? text,
         reply_to: data.replyTo,
       };
@@ -400,7 +407,7 @@ export class XWikiClient {
     return (data.comments ?? []).map(c => ({
       id: c.id,
       author: c.author,
-      date: c.date != null ? String(c.date) : undefined,
+      date: c.date != null ? this.parseTimestamp(c.date) : undefined,
       text: c.text ?? '',
       reply_to: c.replyTo,
     }));
@@ -431,7 +438,8 @@ export class XWikiClient {
         name: data.name ?? filename,
         size_bytes: data.longSize ?? data.size,
         mime_type: data.mimeType ?? mimeType,
-        url: data.xwikiAbsoluteUrl ?? '',
+        // The URL's ?rev= can name the version before this upload; the bare URL serves the latest.
+        url: (data.xwikiAbsoluteUrl ?? '').replace(/\?rev=[^&]*$/, ''),
         status: 'uploaded',
       };
     } catch {
@@ -923,6 +931,8 @@ export class XWikiClient {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/history`;
     const data = await this.get<XWikiHistoryResponse>(path, { number: limit });
     const summaries = data.historySummaries ?? [];
+    // XWiki answers an empty history for a page that does not exist; report it as missing.
+    if (summaries.length === 0) await this.getPage(space, page);
     return summaries.map(h => ({
       version: h.version,
       modified_date: h.modified ? this.parseTimestamp(h.modified) : undefined,
@@ -1144,7 +1154,16 @@ export class XWikiClient {
       throw new XWikiError(`exportPage failed: XWiki returned a page instead of a ${format} file. ${format === 'xar' ? 'XAR export needs wiki admin rights.' : ''}`.trim(), 500);
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
-    const defaults = { pdf: 'application/pdf', xar: 'application/zip', html: 'application/zip' };
+    if (format === 'html') {
+      // The zip also holds the whole skin (CSS, JavaScript libraries, icons): several MB for one
+      // page. Return only the rendered pages, as text.
+      const entries = readZip(Buffer.from(bytes));
+      const pages = entries
+        .filter(e => e.name.startsWith('pages/') && e.name.endsWith('.html'))
+        .map(e => ({ path: e.name, html: e.data.toString('utf8') }));
+      return { space, page, format, pages, files_omitted: entries.length - pages.length, content_type: 'text/html', size_bytes: bytes.length };
+    }
+    const defaults = { pdf: 'application/pdf', xar: 'application/zip' };
     return {
       space,
       page,
@@ -1213,7 +1232,7 @@ export class XWikiClient {
         number: o.number,
         page_version: o.pageVersion,
         page_author: o.pageAuthor?.replace(/^xwiki:XWiki\./, ''),
-        headline: o.headline,
+        headline: o.headline || undefined,
       };
     });
     if (includeProperties) {
@@ -1305,7 +1324,7 @@ export class XWikiClient {
     const autoRedirect = options.autoRedirect ?? false;
 
     // The source must exist (REST 404 otherwise) and the target must not.
-    await this.getPage(space, page);
+    const source = await this.getPage(space, page);
     await this.expectMissing(targetSpace, targetPage, to);
 
     const form = new URLSearchParams({
@@ -1319,7 +1338,22 @@ export class XWikiClient {
       autoRedirect: String(autoRedirect),
       form_token: await this.getCsrfToken(),
     });
-    if (options.newTitle) form.set('newPageTitle', options.newTitle);
+    // Without a title, XWiki retitles a page whose title equals its old name after the new name.
+    const title = options.newTitle || source.title;
+    if (title) form.set('newPageTitle', title);
+
+    // XWiki rewrites only the pages its link index lists, and silently skips the rest (e.g. pages
+    // saved moments before the move). Note each listed page's version to check it afterwards.
+    let before: Map<string, string | undefined> | undefined;
+    let linkCheckError: string | undefined;
+    if (updateLinks) {
+      try {
+        const refs = await this.findBacklinks(from, children && !terminal ? `${space}.` : undefined);
+        before = new Map(await this.mapLimit(refs, 6, async r => [r, await this.pageVersion(r)] as [string, string | undefined]));
+      } catch (e) {
+        linkCheckError = e instanceof Error ? e.message : String(e);
+      }
+    }
 
     const response = await this.postPageAction('view', space, page, form, config.timeoutMs * 4,
       'Moving a page needs delete right on it and edit right on the target.');
@@ -1338,15 +1372,53 @@ export class XWikiClient {
       }
       throw e;
     }
+    let notUpdated: string[] = [];
+    if (before) {
+      try {
+        // A page is rewritten as a new version; an unchanged version still holds the old link.
+        const after = await this.mapLimit([...before], 6, async ([r, v]) => (await this.pageVersion(r)) === v ? r : undefined);
+        notUpdated = after.filter((r): r is string => r !== undefined);
+        // Pages indexed only now were not seen by XWiki either.
+        const late = await this.findBacklinks(from, children && !terminal ? `${space}.` : undefined);
+        notUpdated.push(...late.filter(r => !before!.has(r)));
+      } catch (e) {
+        linkCheckError = e instanceof Error ? e.message : String(e);
+      }
+    }
     return {
       from,
       to,
       children_moved: children && !terminal,
-      links_updated: updateLinks,
+      links_updated: updateLinks && !!before && !linkCheckError && notUpdated.length === 0,
+      ...(before ? { backlinks_found: before.size } : {}),
+      ...(notUpdated.length ? { links_not_updated: notUpdated } : {}),
+      ...(linkCheckError ? { link_check_error: linkCheckError } : {}),
       redirect_left: autoRedirect,
       url: moved.url,
       status: 'moved',
     };
+  }
+
+  /**
+   * Pages that link to a page, from the wiki's link index (Solr links_extended), as the
+   * rename job finds them. Leaves out the page itself and pages under excludePrefix.
+   */
+  private async findBacklinks(ref: string, excludePrefix?: string): Promise<string[]> {
+    const target = `entity:document:${config.wikiName}:${ref}`.replace(/["\\]/g, '\\$&');
+    const results = await this.advancedSearch(`links_extended:"${target}"`, 'solr', 200, 0);
+    const refs = new Set(results.map(r => r.page_full_name).filter(r => r && r !== ref));
+    return [...refs].filter(r => !excludePrefix || !r.startsWith(excludePrefix));
+  }
+
+  /** Current version of a page given as a full reference (Space.Sub.Page), or undefined if it is gone. */
+  private async pageVersion(ref: string): Promise<string | undefined> {
+    const dot = ref.lastIndexOf('.');
+    try {
+      return (await this.getPage(ref.slice(0, dot), ref.slice(dot + 1))).version;
+    } catch (e) {
+      if (e instanceof XWikiError && e.status === 404) return undefined;
+      throw e;
+    }
   }
 
   /**
@@ -1367,7 +1439,8 @@ export class XWikiClient {
         rights: (data.currentRights?.rights ?? []).map(r => ({ right: r.right, scope: r.scope || undefined })),
       },
       needed: (data.availableRights ?? [])
-        .filter(r => r.definitelyRequiredRight || r.maybeRequiredRight)
+        // XWiki lists "no extra right" as an entry with an empty right; leave it out.
+        .filter(r => r.right && (r.definitelyRequiredRight || r.maybeRequiredRight))
         .map(r => ({
           right: r.right,
           scope: r.scope || undefined,
@@ -1410,7 +1483,7 @@ export class XWikiClient {
     const { terminal, spaceName, pageName } = this.refactoringTarget(targetSpace, targetPage);
     const children = options.children ?? true;
 
-    await this.getPage(space, page);
+    const source = await this.getPage(space, page);
     await this.expectMissing(targetSpace, targetPage, to);
 
     const form = new URLSearchParams({
@@ -1423,7 +1496,9 @@ export class XWikiClient {
       deep: String(children),
       form_token: await this.getCsrfToken(),
     });
-    if (options.newTitle) form.set('targetPageTitle', options.newTitle);
+    // Without a title, XWiki retitles a page whose title equals its old name after the new name.
+    const copyTitle = options.newTitle || source.title;
+    if (copyTitle) form.set('targetPageTitle', copyTitle);
 
     const response = await this.postPageAction('view', space, page, form, config.timeoutMs * 4,
       'Copying a page needs view right on it and edit right on the target.');
@@ -1583,7 +1658,14 @@ export class XWikiClient {
   async getAttachmentHistory(space: string, page: string, filename: string): Promise<AttachmentVersion[]> {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/attachments/${encodeURIComponent(filename)}/history`;
     const data = await this.get<{ attachments?: Array<XWikiAttachmentRaw & { version?: string }> }>(path);
-    return (data.attachments ?? []).map(a => ({
+    // XWiki lists the versions oldest first; return them newest first.
+    const versionKey = (v?: string) => (v ?? '0.0').split('.').map(Number);
+    const sorted = [...(data.attachments ?? [])].sort((a, b) => {
+      const [aMajor, aMinor] = versionKey(a.version);
+      const [bMajor, bMinor] = versionKey(b.version);
+      return bMajor - aMajor || bMinor - aMinor;
+    });
+    return sorted.map(a => ({
       version: a.version,
       size_bytes: a.longSize ?? a.size,
       mime_type: a.mimeType,
@@ -1744,9 +1826,10 @@ export class XWikiClient {
   // Utility
   // ---------------------------------------------------------------------------
 
-  /** Convert a Unix ms timestamp or ISO string to an ISO date string */
+  /** Convert a Unix ms timestamp (number or digit string) or ISO string to an ISO date string */
   private parseTimestamp(v: number | string): string {
     if (typeof v === 'number') return new Date(v).toISOString();
+    if (/^\d+$/.test(v)) return new Date(Number(v)).toISOString();
     return v;
   }
 
@@ -1776,4 +1859,35 @@ export class XWikiClient {
     if (!properties) return {};
     return Object.fromEntries(properties.map(p => [p.name, p.value ?? null]));
   }
+}
+
+/**
+ * Read the files of a zip archive (stored or deflated entries) from its central directory.
+ * Enough for XWiki's export zips; no encryption or zip64.
+ */
+export function readZip(buf: Buffer): Array<{ name: string; data: Buffer }> {
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new XWikiError('Export is not a valid zip file.', 500);
+  const count = buf.readUInt16LE(eocd + 10);
+  let pos = buf.readUInt32LE(eocd + 16);
+  const files: Array<{ name: string; data: Buffer }> = [];
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(pos) !== 0x02014b50) throw new XWikiError('Export zip has a damaged directory.', 500);
+    const method = buf.readUInt16LE(pos + 10);
+    const compressedSize = buf.readUInt32LE(pos + 20);
+    const nameLength = buf.readUInt16LE(pos + 28);
+    const extraLength = buf.readUInt16LE(pos + 30);
+    const commentLength = buf.readUInt16LE(pos + 32);
+    const localOffset = buf.readUInt32LE(pos + 42);
+    const name = buf.toString('utf8', pos + 46, pos + 46 + nameLength);
+    pos += 46 + nameLength + extraLength + commentLength;
+    if (name.endsWith('/')) continue;
+    const dataStart = localOffset + 30 + buf.readUInt16LE(localOffset + 26) + buf.readUInt16LE(localOffset + 28);
+    const raw = buf.subarray(dataStart, dataStart + compressedSize);
+    files.push({ name, data: method === 8 ? inflateRawSync(raw) : Buffer.from(raw) });
+  }
+  return files;
 }

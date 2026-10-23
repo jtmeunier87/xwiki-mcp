@@ -12,7 +12,9 @@ Query types:
 - xwql: XWiki Query Language WHERE clause (preferred). Example: "where doc.author = 'XWiki.Admin' order by doc.date desc"
 - solr: Full-text Solr query. Example: "type:DOCUMENT AND space:Main AND title:Release"
 
-For HQL and XWQL, provide ONLY the WHERE clause — xWiki automatically prepends "select doc.fullName from XWikiDocument as doc".`,
+For HQL and XWQL, provide ONLY the WHERE clause — xWiki automatically prepends "select doc.fullName from XWikiDocument as doc".
+
+Recent XWiki versions accept only solr here unless the wiki's xwiki.properties sets rest.allowedQueryTypes (e.g. xwql,hql,solr); a refused type returns XWiki's message naming the allowed types.`,
     {
       query: z.string().describe('The query string — for hql/xwql: just the WHERE clause (e.g. "where doc.space = \'Sandbox\'"); for solr: full Solr expression'),
       type: z.enum(['hql', 'xwql', 'solr']).default('xwql').describe('Query language: hql, xwql (default), or solr'),

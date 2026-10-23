@@ -13,7 +13,9 @@ Give the target as its final reference, in the same form as the source:
 - Nested page: target_space "Docs.Manuals", target_page "WebHome" (moves Docs.Guides.WebHome and, with children: true, everything under it).
 - Terminal page: target_space "Docs.Guides", target_page "Install" (renames Docs.Guides.Setup).
 
-Options: children (default true) moves child pages of a nested page with it; update_links (default true) rewrites links to the page across the wiki; auto_redirect (default false) leaves a redirect at the old reference. Fails if the target exists. Needs delete right on the source and edit right on the target. Read the page back at its new reference to confirm.`,
+Options: children (default true) moves child pages of a nested page with it; update_links (default true) rewrites links to the page across the wiki; auto_redirect (default false) leaves a redirect at the old reference. Fails if the target exists. Needs delete right on the source and edit right on the target. Read the page back at its new reference to confirm.
+
+Links: XWiki rewrites only the pages its search index lists as linking to the page, so a page saved moments before the move can be missed. The result checks this: backlinks_found is how many linking pages the index listed, links_updated is true only when each was rewritten, and links_not_updated names pages still pointing to the old reference (fix them by hand). Object properties of type Page (a page picker) are not in the link index, so pages that refer to it only that way are not rewritten.`,
       inputSchema: {
         space: z.string().describe('Space of the page to move (dot notation, e.g. "Docs.Guides")'),
         page: z.string().describe('Name of the page to move (e.g. "WebHome")'),

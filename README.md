@@ -139,10 +139,12 @@ Create a new page with title, content, optional parent, and optional syntax.
 Update an existing page. Fetches current version first to preserve fields not specified.
 
 #### `xwiki_move_page`
-Move or rename a page, as the wiki's Rename action does: history, objects, attachments and comments go with it. The target is given as its final reference (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `Install` for a terminal one). `children` (default true) moves child pages, `update_links` (default true) rewrites links across the wiki, `auto_redirect` (default false) leaves a redirect at the old reference, `new_title` sets a new title. Fails if the target exists. Needs delete right on the source and edit right on the target. A write tool: it removes nothing but the page no longer exists at its old reference.
+Move or rename a page, as the wiki's Rename action does: history, objects, attachments and comments go with it. The target is given as its final reference (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `Install` for a terminal one). `children` (default true) moves child pages, `update_links` (default true) rewrites links across the wiki and checks the result, `auto_redirect` (default false) leaves a redirect at the old reference, `new_title` sets a new title. Omitting `new_title` keeps the current title. Fails if the target exists. Needs delete right on the source and edit right on the target. A write tool: it removes nothing but the page no longer exists at its old reference.
+
+XWiki rewrites only the pages its search index lists as linking to the page (Solr `links_extended`), and skips any page it has not indexed yet, such as one saved moments before. The tool runs the same lookup before the move and checks each listed page afterwards: `backlinks_found` counts them, `links_updated` is true only when every one was rewritten, and `links_not_updated` names pages that still point to the old reference. Object properties of type Page (page pickers) are not in the link index and are not rewritten.
 
 #### `xwiki_copy_page`
-Copy a page to a new reference, as the wiki's Copy action does; the original is unchanged. Same target form as `xwiki_move_page` (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `SetupCopy` for a terminal one). `children` (default true) copies child pages of a nested page; `new_title` sets the copy's title. Fails if the target exists. Needs view right on the source and edit right on the target.
+Copy a page to a new reference, as the wiki's Copy action does; the original is unchanged. Same target form as `xwiki_move_page` (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `SetupCopy` for a terminal one). `children` (default true) copies child pages of a nested page; `new_title` sets the copy's title; without it the copy keeps the source's title (XWiki would otherwise retitle a page whose title equals its name). Fails if the target exists. Needs view right on the source and edit right on the target.
 
 #### `xwiki_delete_page`
 Permanently delete a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
@@ -178,7 +180,7 @@ List attachments on a page with name, size, MIME type, and download URL.
 Find attachments across the wiki, or within one space and its subspaces. Filters match part of the value: `name`, `page`, `author`; `types` is a comma-separated list of media types or parts (`image`, `application/pdf`). Paged with `start` / `limit` (default 25).
 
 #### `xwiki_list_attachment_versions`
-List the versions of one attachment with size, media type, author, date and a download URL per version.
+List the versions of one attachment, newest first, with size, media type, author, date and a download URL per version.
 
 #### `xwiki_upload_attachment`
 Upload a file (base64-encoded) to a page.
@@ -241,7 +243,7 @@ Get a single object by class name and object number (0-based).
 Read a single named property from an XObject — more efficient than `xwiki_get_object` when only one field is needed. Useful for status checks and conditional logic.
 
 #### `xwiki_list_class_objects`
-List the objects of one class across the whole wiki with the page each one is on, ordered by page (or by page date with `order: "date"`). `include_properties` (default true) adds every property value, one request per object. Paged with `start` / `limit` (default 50); pages the account cannot view are left out, so keep paging while `has_more` is true.
+List the objects of one class across the whole wiki with the page each one is on, ordered by page (or by page date with `order: "date"`). `include_properties` (default true) adds every property value, one request per object; without it each row carries XWiki's `headline` (the first property's value) only when that is not empty. Paged with `start` / `limit` (default 50); pages the account cannot view are left out, so keep paging while `has_more` is true.
 
 #### `xwiki_create_object`
 Create a new XObject on a page with class name and property key-value map.
@@ -275,7 +277,7 @@ Get the most recent modifications across the entire wiki.
 Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
 
 #### `xwiki_query`
-Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`.
+Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`. Recent XWiki versions accept only Solr on this endpoint unless `xwiki.properties` sets `rest.allowedQueryTypes` (e.g. `xwql,hql,solr`); a refused type returns XWiki's message naming the allowed types.
 
 ### Render & Export
 
@@ -283,7 +285,7 @@ Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WH
 Render a page through the xWiki macro engine to plain text or HTML. Useful for pages with macros, velocity, or include blocks. Uses the action URL (`/bin/get/`) — not the REST API.
 
 #### `xwiki_export_page`
-Export a page as a file (base64). `format`: `pdf` (default, needs the PDF export extension), `xar` (a wiki package with objects and attachments that can be imported elsewhere; needs wiki admin rights; `history: true` includes page history) or `html` (a zip of the rendered page as static HTML). For `xar` and `html`, `children: true` adds every page under a nested page.
+Export a page as a file (base64 for `pdf` and `xar`). `format`: `pdf` (default, needs the PDF export extension), `xar` (a wiki package with objects and attachments that can be imported elsewhere; needs wiki admin rights; `history: true` includes page history) or `html` (the rendered page as static HTML, returned as text in `pages`; the export's skin, script and image files, several MB, are left out and counted in `files_omitted`). For `xar` and `html`, `children: true` adds every page under a nested page.
 
 ---
 
@@ -328,6 +330,7 @@ npm test        # 118 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.16.0 — Fixes from a live test: `xwiki_move_page` checks that links were rewritten (`backlinks_found`, `links_not_updated`); copy and move keep the title; HTML export returns the page HTML, not a multi-MB zip; attachment versions newest first; history of a missing page is not found; dates are ISO strings everywhere; empty headline and empty required-right entries left out; upload URL without a stale `rev`; a rejected request (400) carries XWiki's reason
 - [x] v0.15.0 — Consistent tool names (breaking): `list_` for collections, `get_` for one item:
   - `xwiki_get_attachments` → `xwiki_list_attachments`
   - `xwiki_get_comments` → `xwiki_list_comments`
