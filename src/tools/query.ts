@@ -24,7 +24,7 @@ For HQL and XWQL, provide ONLY the WHERE clause — xWiki automatically prepends
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ query, type, count: results.length, results }, null, 2),
+          text: JSON.stringify({ query, type, count: results.length, results }),
         }],
       };
     },

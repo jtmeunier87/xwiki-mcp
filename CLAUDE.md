@@ -26,6 +26,8 @@ src/
 ├── index.ts          # Entry point: tool list with access levels, transports, HTTP token check
 ├── registry.ts       # Registers tools: annotations from access level, disabled tools, error guard
 ├── diff.ts           # Line diff for xwiki_compare_page_versions
+├── tools/paging.ts   # start/limit inputs and _pagination for list tools
+├── tools/files.ts    # File bytes as image or embedded-resource content
 ├── config.ts         # Env var parsing/validation
 ├── version.ts        # Single source of the server version (keep in step with package.json)
 ├── client.ts         # XWiki REST/action-URL HTTP client (auth, CSRF token, mapping)
@@ -55,6 +57,13 @@ XWIKI_MCP_HTTP_TOKEN    # HTTP mode: bearer token required on POST /mcp (default
 XWIKI_MCP_READ_ONLY     # true: register read tools only (default: false)
 XWIKI_MCP_ALLOW_DELETE  # true: also register delete tools (default: false)
 XWIKI_MCP_DISABLED_TOOLS # Comma-separated tools to leave unregistered (unknown names fail at startup)
+XWIKI_MCP_TOOLSETS      # Comma-separated toolsets to register (default: all; unknown names fail at startup)
+XWIKI_MCP_ALLOWED_ORIGINS # HTTP mode: origins allowed when a request sends Origin (others get 403)
+XWIKI_MCP_ALLOWED_HOSTS # HTTP mode: Host header values to accept (default: any)
+XWIKI_MCP_RATE_LIMIT    # Tool calls per minute, all clients (default: 120; 0 = off)
+XWIKI_MCP_MAX_FILE_BYTES # Largest file download/export returns (default: 10 MB)
+XWIKI_MCP_LOG_CALLS     # One JSON line per call on stderr (default: true)
+# XWIKI_PASSWORD, XWIKI_TOKEN and XWIKI_MCP_HTTP_TOKEN can be read from a file: set NAME_FILE instead
 ```
 
 ## Access modes and security
@@ -62,6 +71,7 @@ XWIKI_MCP_DISABLED_TOOLS # Comma-separated tools to leave unregistered (unknown 
 - Tools a mode excludes are not registered at all. `XWIKI_MCP_READ_ONLY` overrides `XWIKI_MCP_ALLOW_DELETE`.
 - Delete tools (`xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`, `xwiki_delete_comment`) are off by default.
 - `XWIKI_MCP_DISABLED_TOOLS` only removes tools from the mode's set.
+- HTTP mode refuses a request whose `Origin` is not in `XWIKI_MCP_ALLOWED_ORIGINS` (403, DNS rebinding) and, if set, a `Host` not in `XWIKI_MCP_ALLOWED_HOSTS`; `GET` / `DELETE` on `/mcp` return 405.
 - The HTTP mode's only authentication is the optional `XWIKI_MCP_HTTP_TOKEN`. It must still sit behind an authenticating proxy or on a private network; document this wherever HTTP deployment is described.
 
 ## XWiki REST API Specifics
@@ -79,8 +89,11 @@ Mocked tests cannot prove a write is saved. Verify write changes against a real 
 
 ## Tool Response Format
 
-- Return compact JSON with only useful fields (strip XWiki XML wrappers)
-- Paginated results include `_pagination: { total, start, limit, has_more }`
+- Return compact JSON (`JSON.stringify(x)`, no indentation) with only useful fields (strip XWiki XML wrappers)
+- List tools take `...pagingShape` and return `pageOf(items, start, limit)` (`src/tools/paging.ts`): `_pagination: { total, start, limit, has_more }`
+- File bytes go out through `fileContent()` (`src/tools/files.ts`): images as image content, other files as embedded resources, never base64 in text; check sizes against `XWIKI_MCP_MAX_FILE_BYTES`
+- Long text (page content) comes in windows with `offset` / `next_offset`
+- New tools go in a toolset in `TOOLS` (`index.ts`); `registry.ts` adds the title (override in `TITLES` if the name reads badly)
 - Page URLs as full web URLs, not REST endpoints
 
 ## Error Handling Convention

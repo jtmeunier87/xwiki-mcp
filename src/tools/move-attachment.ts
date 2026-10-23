@@ -22,7 +22,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     async ({ space, page, filename, target_space, target_page, target_filename, update_references, auto_redirect }) => {
       try {
         const result = await client.moveAttachment(space, page, filename, target_space, target_page, target_filename, { updateReferences: update_references, autoRedirect: auto_redirect });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Attachment not found: ${space}/${page}@${filename}`

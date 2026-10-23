@@ -81,82 +81,86 @@ import { register as registerComparePageVersions } from './tools/compare-page-ve
 import { register as registerUpdateComment } from './tools/update-comment.js';
 import { register as registerDeleteComment } from './tools/delete-comment.js';
 
-// Every tool with the access it needs. XWIKI_MCP_READ_ONLY keeps only 'read';
+// Toolsets group tools so a deployment can register only what it needs (XWIKI_MCP_TOOLSETS).
+const TOOLSETS = ['pages', 'recycle_bin', 'comments', 'attachments', 'tags', 'classes', 'objects', 'history', 'search', 'export'] as const;
+type Toolset = typeof TOOLSETS[number];
+
+// Every tool with its toolset and the access it needs. XWIKI_MCP_READ_ONLY keeps only 'read';
 // 'delete' tools also need XWIKI_MCP_ALLOW_DELETE.
-const TOOLS: Array<[Access, Register]> = [
+const TOOLS: Array<[Toolset, Access, Register]> = [
   // Pages (read)
-  ['read', registerListSpaces],
-  ['read', registerListPages],
-  ['read', registerGetPage],
-  ['read', registerListPageChildren],
-  ['read', registerGetPageTree],
-  ['read', registerFindPages],
-  ['read', registerGetRequiredRights],
+  ['pages', 'read', registerListSpaces],
+  ['pages', 'read', registerListPages],
+  ['pages', 'read', registerGetPage],
+  ['pages', 'read', registerListPageChildren],
+  ['pages', 'read', registerGetPageTree],
+  ['pages', 'read', registerFindPages],
+  ['pages', 'read', registerGetRequiredRights],
 
   // Pages (write)
-  ['write', registerCreatePage],
-  ['write', registerUpdatePage],
-  ['write', registerMovePage],
-  ['write', registerCopyPage],
-  ['delete', registerDeletePage],
+  ['pages', 'write', registerCreatePage],
+  ['pages', 'write', registerUpdatePage],
+  ['pages', 'write', registerMovePage],
+  ['pages', 'write', registerCopyPage],
+  ['pages', 'delete', registerDeletePage],
 
   // Recycle bin
-  ['read', registerListDeletedPages],
-  ['write', registerRestoreDeletedPage],
+  ['recycle_bin', 'read', registerListDeletedPages],
+  ['recycle_bin', 'write', registerRestoreDeletedPage],
 
   // Comments
-  ['read', registerListComments],
-  ['write', registerAddComment],
-  ['write', registerUpdateComment],
-  ['delete', registerDeleteComment],
+  ['comments', 'read', registerListComments],
+  ['comments', 'write', registerAddComment],
+  ['comments', 'write', registerUpdateComment],
+  ['comments', 'delete', registerDeleteComment],
 
   // Attachments
-  ['read', registerListAttachments],
-  ['read', registerSearchAttachments],
-  ['read', registerListAttachmentVersions],
-  ['write', registerUploadAttachment],
-  ['read', registerDownloadAttachment],
-  ['write', registerMoveAttachment],
-  ['delete', registerDeleteAttachment],
+  ['attachments', 'read', registerListAttachments],
+  ['attachments', 'read', registerSearchAttachments],
+  ['attachments', 'read', registerListAttachmentVersions],
+  ['attachments', 'write', registerUploadAttachment],
+  ['attachments', 'read', registerDownloadAttachment],
+  ['attachments', 'write', registerMoveAttachment],
+  ['attachments', 'delete', registerDeleteAttachment],
 
   // Tags
-  ['read', registerGetPageTags],
-  ['write', registerAddTags],
-  ['write', registerRemoveTags],
-  ['read', registerListTags],
-  ['read', registerListPagesByTag],
+  ['tags', 'read', registerGetPageTags],
+  ['tags', 'write', registerAddTags],
+  ['tags', 'write', registerRemoveTags],
+  ['tags', 'read', registerListTags],
+  ['tags', 'read', registerListPagesByTag],
 
   // Classes
-  ['read', registerListClasses],
-  ['read', registerGetClass],
-  ['read', registerListClassPropertyValues],
-  ['write', registerUpdateClassProperties],
-  ['write', registerAddClassProperty],
-  ['write', registerSetClassPropertyEnabled],
+  ['classes', 'read', registerListClasses],
+  ['classes', 'read', registerGetClass],
+  ['classes', 'read', registerListClassPropertyValues],
+  ['classes', 'write', registerUpdateClassProperties],
+  ['classes', 'write', registerAddClassProperty],
+  ['classes', 'write', registerSetClassPropertyEnabled],
 
   // Objects
-  ['read', registerListPageObjects],
-  ['read', registerGetObject],
-  ['read', registerGetObjectProperty],
-  ['read', registerListClassObjects],
-  ['write', registerCreateObject],
-  ['write', registerUpdateObject],
-  ['delete', registerDeleteObject],
+  ['objects', 'read', registerListPageObjects],
+  ['objects', 'read', registerGetObject],
+  ['objects', 'read', registerGetObjectProperty],
+  ['objects', 'read', registerListClassObjects],
+  ['objects', 'write', registerCreateObject],
+  ['objects', 'write', registerUpdateObject],
+  ['objects', 'delete', registerDeleteObject],
 
   // History
-  ['read', registerListPageVersions],
-  ['read', registerGetPageVersion],
-  ['read', registerComparePageVersions],
-  ['write', registerRollbackPage],
-  ['read', registerListRecentChanges],
+  ['history', 'read', registerListPageVersions],
+  ['history', 'read', registerGetPageVersion],
+  ['history', 'read', registerComparePageVersions],
+  ['history', 'write', registerRollbackPage],
+  ['history', 'read', registerListRecentChanges],
 
   // Search and query
-  ['read', registerSearchPages],
-  ['read', registerQuery],
+  ['search', 'read', registerSearchPages],
+  ['search', 'read', registerQuery],
 
   // Render and export
-  ['read', registerRenderPage],
-  ['read', registerExportPage],
+  ['export', 'read', registerRenderPage],
+  ['export', 'read', registerExportPage],
 ];
 
 function allowed(access: Access): boolean {
@@ -165,29 +169,43 @@ function allowed(access: Access): boolean {
   return access === 'write' || config.allowDelete;
 }
 
-const MODE_TOOLS = TOOLS.filter(([access]) => allowed(access));
+const unknownToolsets = config.toolsets.filter(t => !(TOOLSETS as readonly string[]).includes(t));
+if (unknownToolsets.length > 0) {
+  process.stderr.write(`Fatal: XWIKI_MCP_TOOLSETS names unknown toolsets: ${unknownToolsets.join(', ')} (known: ${TOOLSETS.join(', ')})\n`);
+  process.exit(1);
+}
+const inToolsets = (t: Toolset) => config.toolsets.length === 0 || config.toolsets.includes(t);
+const ALL_TOOLS: Array<[Access, Register]> = TOOLS.map(([, access, register]) => [access, register]);
+const MODE_TOOLS: Array<[Access, Register]> = TOOLS
+  .filter(([toolset, access]) => inToolsets(toolset) && allowed(access))
+  .map(([, access, register]) => [access, register]);
+
+// Sent to clients at connection; models read it to see how the tools fit together.
+const INSTRUCTIONS = `Tools for one XWiki instance (${config.baseUrl}). Pages are addressed by space (dot notation for nested spaces, e.g. "Docs.Guides") and page name ("WebHome" for a space's home page).
+- Find: xwiki_search_pages (full text), xwiki_find_pages (by name, space, author), xwiki_query (XWQL / HQL / Solr), xwiki_get_page_tree (every page under a root).
+- Read a page with xwiki_get_page; long content comes in windows (offset / next_offset). List tools are paged with start / limit; keep paging while has_more is true.
+- Structured data lives in objects of classes: xwiki_get_class shows a class's fields; xwiki_list_page_objects (one page) and xwiki_list_class_objects (every object of a class) read them.
+- Versions: xwiki_list_page_versions gives version numbers for xwiki_get_page_version, xwiki_compare_page_versions and xwiki_rollback_page.
+- After any write, read the result back to confirm it. The wiki account's own rights apply to every call.`;
 const MODE = config.readOnly ? 'read-only' : config.allowDelete ? 'read/write/delete' : 'read/write, no delete';
 const DISABLED = new Set(config.disabledTools);
 
 function buildServer(seen?: Set<string>): { server: McpServer; tools: string[] } {
-  const server = new McpServer({
-    name: 'xwiki-mcp',
-    version: VERSION,
-  });
+  const server = new McpServer({ name: 'xwiki-mcp', version: VERSION }, { instructions: INSTRUCTIONS });
   const tools = registerTools(server, new XWikiClient(), MODE_TOOLS, DISABLED, seen);
   return { server, tools };
 }
 
 // Build once at startup to count the tools and check XWIKI_MCP_DISABLED_TOOLS names.
 const allNames = new Set<string>();
-registerTools(new McpServer({ name: 'xwiki-mcp', version: VERSION }), new XWikiClient(), TOOLS, new Set(), allNames);
+registerTools(new McpServer({ name: 'xwiki-mcp', version: VERSION }), new XWikiClient(), ALL_TOOLS, new Set(), allNames);
 const unknown = config.disabledTools.filter(t => !allNames.has(t));
 if (unknown.length > 0) {
   process.stderr.write(`Fatal: XWIKI_MCP_DISABLED_TOOLS names unknown tools: ${unknown.join(', ')}\n`);
   process.exit(1);
 }
 const ENABLED_COUNT = buildServer().tools.length;
-const SUMMARY = `Registered ${ENABLED_COUNT} of ${TOOLS.length} tools (${MODE}${DISABLED.size ? `, ${DISABLED.size} disabled` : ''})`;
+const SUMMARY = `Registered ${ENABLED_COUNT} of ${TOOLS.length} tools (${MODE}${config.toolsets.length ? `, toolsets ${config.toolsets.join(',')}` : ''}${DISABLED.size ? `, ${DISABLED.size} disabled` : ''})`;
 
 /** True when no token is configured, or the request carries "Authorization: Bearer <token>". */
 function authorized(header: string | undefined): boolean {
@@ -195,6 +213,17 @@ function authorized(header: string | undefined): boolean {
   const given = Buffer.from(header?.startsWith('Bearer ') ? header.slice(7) : '');
   const expected = Buffer.from(config.httpToken);
   return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+/**
+ * DNS rebinding protection for HTTP mode: a request that carries an Origin header must
+ * name an allowed origin (XWIKI_MCP_ALLOWED_ORIGINS), and when XWIKI_MCP_ALLOWED_HOSTS is
+ * set the Host header must be one of them. Clients that are not browsers send no Origin.
+ */
+function originAllowed(origin: string | undefined, host: string | undefined): boolean {
+  if (origin !== undefined && !config.allowedOrigins.includes(origin)) return false;
+  if (config.allowedHosts.length > 0 && !config.allowedHosts.includes((host ?? '').toLowerCase())) return false;
+  return true;
 }
 
 async function main() {
@@ -212,6 +241,17 @@ async function main() {
       }
 
       if (url.pathname === '/mcp') {
+        if (!originAllowed(req.headers.origin, req.headers.host)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('Forbidden: Origin or Host not allowed');
+          return;
+        }
+        if (req.method !== 'POST') {
+          // Stateless server: no standalone SSE stream (GET) and no sessions to end (DELETE).
+          res.writeHead(405, { 'Content-Type': 'text/plain', Allow: 'POST' });
+          res.end('Method Not Allowed');
+          return;
+        }
         if (!authorized(req.headers.authorization)) {
           res.writeHead(401, { 'Content-Type': 'text/plain', 'WWW-Authenticate': 'Bearer' });
           res.end('Unauthorized');
@@ -231,6 +271,10 @@ async function main() {
       res.end('Not found. Available endpoints: POST /mcp, GET /health');
     });
 
+    const shutdown = () => httpServer.close(() => process.exit(0));
+    process.once('SIGTERM', shutdown);
+    process.once('SIGINT', shutdown);
+
     httpServer.listen(httpPort, config.httpHost || undefined, () => {
       process.stderr.write(`xwiki-mcp v${VERSION} started in Streamable HTTP mode on ${config.httpHost || 'all interfaces'}, port ${httpPort}${config.httpToken ? ' (bearer token required)' : ''}\n`);
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
@@ -243,6 +287,7 @@ async function main() {
     const { server } = buildServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
+    process.once('SIGTERM', () => { void server.close().finally(() => process.exit(0)); });
 
     process.stderr.write(`xwiki-mcp v${VERSION} started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
     process.stderr.write(`${SUMMARY}\n`);

@@ -385,6 +385,8 @@ export interface ExportResult {
   content_base64: string;
   content_type: string;
   size_bytes: number;
+  /** The export URL */
+  url?: string;
 }
 
 export interface ClassUpdateResult {

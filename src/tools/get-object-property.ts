@@ -25,7 +25,7 @@ Use get_class to discover property names for a class.`,
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ space, page, class_name, object_number, property: prop }, null, 2),
+          text: JSON.stringify({ space, page, class_name, object_number, property: prop }),
         }],
       };
     },

@@ -446,7 +446,7 @@ export class XWikiClient {
     space: string,
     page: string,
     filename: string,
-  ): Promise<{ name: string; content_base64: string; mime_type?: string; size_bytes: number }> {
+  ): Promise<{ name: string; content_base64: string; mime_type?: string; size_bytes: number; download_url: string }> {
     // Build the direct download URL (not through REST path — attachments served via /bin/download)
     const spaceParts = space.split('.').map(s => encodeURIComponent(s)).join('/');
     const downloadUrl = `${config.baseUrl}/bin/download/${spaceParts}/${encodeURIComponent(page)}/${encodeURIComponent(filename)}`;
@@ -465,14 +465,25 @@ export class XWikiClient {
     if (response.status === 401 || response.status === 403) throw new XWikiError('Authentication error downloading attachment.', response.status);
     if (!response.ok) throw new XWikiError(`Failed to download attachment: ${response.status}`, response.status);
 
+    this.checkFileSize(Number(response.headers.get('content-length') ?? 0), downloadUrl);
     const buffer = await response.arrayBuffer();
+    this.checkFileSize(buffer.byteLength, downloadUrl);
     const content_base64 = Buffer.from(buffer).toString('base64');
     return {
       name: filename,
       content_base64,
       mime_type: response.headers.get('content-type') ?? undefined,
       size_bytes: buffer.byteLength,
+      download_url: downloadUrl,
     };
+  }
+
+  /** Refuse files over XWIKI_MCP_MAX_FILE_BYTES, so a large file never reaches the model. */
+  private checkFileSize(bytes: number, url: string): void {
+    if (bytes > config.maxFileBytes) {
+      const size = (n: number) => (n < 1024 * 1024 ? `${Math.ceil(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+      throw new XWikiError(`File is ${size(bytes)}, over the ${size(config.maxFileBytes)} limit (XWIKI_MCP_MAX_FILE_BYTES). Open it in the wiki instead: ${url}`, 413);
+    }
   }
 
   /**
@@ -1143,7 +1154,9 @@ export class XWikiClient {
       // XWiki answers an export it refused (rights, nothing selected) with an HTML page.
       throw new XWikiError(`exportPage failed: XWiki returned a page instead of a ${format} file. ${format === 'xar' ? 'XAR export needs wiki admin rights.' : ''}`.trim(), 500);
     }
+    this.checkFileSize(Number(response.headers.get('content-length') ?? 0), url.toString());
     const bytes = new Uint8Array(await response.arrayBuffer());
+    this.checkFileSize(bytes.length, url.toString());
     const defaults = { pdf: 'application/pdf', xar: 'application/zip', html: 'application/zip' };
     return {
       space,
@@ -1152,6 +1165,7 @@ export class XWikiClient {
       content_base64: Buffer.from(bytes).toString('base64'),
       content_type: contentType || defaults[format],
       size_bytes: bytes.length,
+      url: url.toString(),
     };
   }
 

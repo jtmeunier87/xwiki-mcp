@@ -29,7 +29,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     async ({ space, page, title, content, syntax, parent }) => {
       try {
         const result = await client.createPage(space, page, title, content, syntax, parent);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return { content: [{ type: 'text', text: msg }], isError: true };

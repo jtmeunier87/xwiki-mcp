@@ -28,7 +28,7 @@ export function register(server: McpServer, client: XWikiClient): void {
       }
       try {
         const result = await client.updatePage(space, page, content, title, syntax);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found: ${space}/${page}. Use create_page to create it.`

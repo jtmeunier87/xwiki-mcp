@@ -1,20 +1,16 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { XWikiClient } from '../client.js';
+import { pagingShape, pageOf } from './paging.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
     'xwiki_list_tags',
-    'List all tags used anywhere in the wiki. Use this to discover available tags before calling get_pages_by_tag.',
-    {},
-    async (_args: Record<string, never>) => {
-      const tags = await client.getAllWikiTags();
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ count: tags.length, tags }, null, 2),
-        }],
-      };
+    'List the tags used anywhere in the wiki, paged with start / limit. Use it to find tags before calling xwiki_list_pages_by_tag.',
+    { ...pagingShape },
+    async ({ start, limit }) => {
+      const { items, _pagination } = pageOf(await client.getAllWikiTags(), start, limit);
+      return { content: [{ type: 'text', text: JSON.stringify({ tags: items, _pagination }) }] };
     },
   );
 }

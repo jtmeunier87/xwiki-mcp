@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { XWikiClient } from './client.js';
+import { config } from './config.js';
 
 export type Access = 'read' | 'write' | 'delete';
 export type Register = (server: McpServer, client: XWikiClient) => void;
@@ -28,16 +29,70 @@ export function annotationsFor(name: string, access: Access): ToolAnnotations {
   };
 }
 
-type Result = { content: Array<{ type: 'text'; text: string }>; isError: true };
+// Display titles where the name read as words is not clear enough.
+const TITLES: Record<string, string> = {
+  xwiki_query: 'Query the wiki (XWQL / HQL / Solr)',
+  xwiki_set_class_property_enabled: 'Enable or disable a class property',
+  xwiki_get_required_rights: 'Get the rights a page needs',
+};
 
-/** Wrap a tool callback so a thrown error becomes an isError result instead of a failed request. */
-function guard<T extends (...args: never[]) => unknown>(cb: T): T {
+/** Human-readable title: from TITLES, else the name without its prefix, as a sentence. */
+export function titleFor(name: string): string {
+  if (TITLES[name]) return TITLES[name];
+  const words = name.replace(/^xwiki_/, '').replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// Tool calls in the last minute, across every client of this process (XWIKI_MCP_RATE_LIMIT).
+const recentCalls: number[] = [];
+
+/** True if one more call fits in the per-minute limit; records it. */
+export function takeCallSlot(now = Date.now()): boolean {
+  if (!config.rateLimit) return true;
+  while (recentCalls.length > 0 && now - recentCalls[0] >= 60_000) recentCalls.shift();
+  if (recentCalls.length >= config.rateLimit) return false;
+  recentCalls.push(now);
+  return true;
+}
+
+/** For tests: forget recorded calls. */
+export function resetCallSlots(): void {
+  recentCalls.length = 0;
+}
+
+type ToolResult = { content: Array<{ type: string; text?: string }>; isError?: boolean; structuredContent?: unknown };
+
+const errorResult = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
+
+/**
+ * Wrap a tool callback: enforce the rate limit, turn a thrown error into an isError
+ * result, add structuredContent when the text result is a JSON object, and log the call.
+ */
+function guard<T extends (...args: never[]) => unknown>(name: string, cb: T): T {
   return (async (...args: Parameters<T>) => {
-    try {
-      return await cb(...args);
-    } catch (e) {
-      return { content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }], isError: true } satisfies Result;
+    const started = Date.now();
+    let result: ToolResult;
+    if (!takeCallSlot(started)) {
+      result = errorResult(`Rate limit reached: ${config.rateLimit} tool calls per minute (XWIKI_MCP_RATE_LIMIT). Wait a minute and retry.`);
+    } else {
+      try {
+        result = (await cb(...args)) as ToolResult;
+      } catch (e) {
+        result = errorResult(e instanceof Error ? e.message : String(e));
+      }
     }
+    const first = result.content?.[0];
+    if (!result.isError && result.structuredContent === undefined && result.content?.length === 1 && first?.type === 'text' && first.text?.startsWith('{')) {
+      try {
+        result.structuredContent = JSON.parse(first.text);
+      } catch {
+        // Not JSON: text only.
+      }
+    }
+    if (config.logCalls) {
+      process.stderr.write(`${JSON.stringify({ time: new Date(started).toISOString(), tool: name, ok: !result.isError, ms: Date.now() - started })}\n`);
+    }
+    return result;
   }) as unknown as T;
 }
 
@@ -62,7 +117,7 @@ export function registerTools(
             seen.add(name);
             if (disabled.has(name)) return undefined;
             registered.push(name);
-            return target.registerTool(name, { ...cfg, annotations: { ...annotationsFor(name, access), ...cfg.annotations } } as never, guard(cb) as never);
+            return target.registerTool(name, { title: titleFor(name), ...cfg, annotations: { title: titleFor(name), ...annotationsFor(name, access), ...cfg.annotations } } as never, guard(name, cb) as never);
           };
         }
         if (prop === 'tool') {
@@ -73,7 +128,7 @@ export function registerTools(
             seen.add(name);
             if (disabled.has(name)) return undefined;
             registered.push(name);
-            return target.tool(name, description, schema, annotationsFor(name, access), guard(cb) as never);
+            return target.registerTool(name, { title: titleFor(name), description, inputSchema: schema, annotations: { title: titleFor(name), ...annotationsFor(name, access) } } as never, guard(name, cb) as never);
           };
         }
         return Reflect.get(target, prop, receiver);

@@ -33,7 +33,7 @@ Options: children (default true) moves child pages of a nested page with it; upd
           autoRedirect: auto_redirect,
           newTitle: new_title,
         });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found: ${space}/${page}`

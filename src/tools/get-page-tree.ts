@@ -33,7 +33,7 @@ The walk makes one request per page (plus one per page for objects), so large tr
           maxPages: max_pages,
           includeObjects: include_objects,
         });
-        return { content: [{ type: 'text', text: JSON.stringify(tree, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(tree) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found: ${space}/${page}`

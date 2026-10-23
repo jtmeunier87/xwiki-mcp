@@ -23,7 +23,7 @@ Filters match part of the value: name (file name), page (page name), author (e.g
     async ({ space, name, page, author, types, start, limit }) => {
       try {
         const { attachments, pagination } = await client.searchAttachments({ space, name, page, author, types }, start, limit);
-        return { content: [{ type: 'text', text: JSON.stringify({ count: attachments.length, attachments, _pagination: pagination }, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify({ count: attachments.length, attachments, _pagination: pagination }) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Space not found: ${space}`

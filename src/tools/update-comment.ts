@@ -18,7 +18,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     async ({ space, page, id, text }) => {
       try {
         const result = await client.updateComment(space, page, id, text);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Comment not found: ${space}/${page} #${id}`

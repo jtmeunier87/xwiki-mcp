@@ -19,7 +19,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     async ({ space, page, from_version, to_version, context }) => {
       try {
         const result = await client.comparePageVersions(space, page, from_version, to_version, context);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page or version not found: ${space}/${page}`

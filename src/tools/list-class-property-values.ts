@@ -18,7 +18,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     async ({ class_name, property, filter, limit }) => {
       try {
         const result = await client.getClassPropertyValues(class_name, property, filter, limit).then(values => ({ class_name, property, count: values.length, values }));
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Class or property not found: ${class_name}.${property}`

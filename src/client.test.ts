@@ -13,6 +13,7 @@ vi.mock('./config.js', () => ({
     restPath: '/rest',
     pageLimit: 50,
     timeoutMs: 30000,
+    maxFileBytes: 1024,
   },
 }));
 
@@ -1916,5 +1917,28 @@ describe('exportPage formats', () => {
       'POST /bin/export/Main/WebHome': { body: '<html>', headers: { 'content-type': 'text/html;charset=UTF-8' } },
     }));
     await expect(new XWikiClient().exportPage('Main', 'WebHome', 'xar')).rejects.toThrow('needs wiki admin rights');
+  });
+});
+
+
+describe('file size limit', () => {
+  it('refuses a download over XWIKI_MCP_MAX_FILE_BYTES with the URL to open instead', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      arrayBuffer: () => Promise.resolve(new Uint8Array(2048).buffer),
+      headers: { get: (k: string) => (k === 'content-length' ? '2048' : 'application/pdf') },
+    }));
+    await expect(new XWikiClient().downloadAttachment('Docs.Guides', 'Setup', 'big.pdf'))
+      .rejects.toThrow('File is 2 KB, over the 1 KB limit (XWIKI_MCP_MAX_FILE_BYTES). Open it in the wiki instead: https://wiki.example.com/bin/download/Docs/Guides/Setup/big.pdf');
+  });
+
+  it('returns the download URL with the file', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, statusText: 'OK',
+      arrayBuffer: () => Promise.resolve(new Uint8Array(10).buffer),
+      headers: { get: (k: string) => (k === 'content-type' ? 'application/pdf' : null) },
+    }));
+    const file = await new XWikiClient().downloadAttachment('Main', 'WebHome', 'a.pdf');
+    expect(file).toMatchObject({ size_bytes: 10, download_url: 'https://wiki.example.com/bin/download/Main/WebHome/a.pdf' });
   });
 });

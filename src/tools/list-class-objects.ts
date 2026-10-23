@@ -23,7 +23,7 @@ include_properties (default true) reads each object in full, one extra request p
     async ({ class_name, start, limit, order, include_properties }) => {
       try {
         const { objects, pagination } = await client.listClassObjects(class_name, start, limit, order, include_properties);
-        return { content: [{ type: 'text', text: JSON.stringify({ class_name, count: objects.length, objects, _pagination: pagination }, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify({ class_name, count: objects.length, objects, _pagination: pagination }) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Class not found: ${class_name}`

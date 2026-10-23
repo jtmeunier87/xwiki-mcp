@@ -16,7 +16,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     async ({ class_name, properties }) => {
       try {
         const result = await client.updateClassProperties(class_name, properties);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (err) {
         const msg = err instanceof XWikiError ? err.message : String(err);
         return { content: [{ type: 'text', text: `Error updating class: ${msg}` }], isError: true };

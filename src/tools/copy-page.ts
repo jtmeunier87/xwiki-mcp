@@ -26,7 +26,7 @@ Fails if the target exists. Needs view right on the source and edit right on the
     async ({ space, page, target_space, target_page, children, new_title }) => {
       try {
         const result = await client.copyPage(space, page, target_space, target_page, { children, newTitle: new_title });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found: ${space}/${page}`

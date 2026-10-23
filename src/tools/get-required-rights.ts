@@ -18,7 +18,7 @@ Returns declared (the page's required-rights setting and whether XWiki enforces 
     async ({ space, page }) => {
       try {
         const report = await client.getRequiredRights(space, page);
-        return { content: [{ type: 'text', text: JSON.stringify(report, null, 2) }] };
+        return { content: [{ type: 'text', text: JSON.stringify(report) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found (or required rights analysis unavailable before XWiki 17.4): ${space}/${page}`

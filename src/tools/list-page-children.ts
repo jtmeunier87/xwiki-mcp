@@ -2,21 +2,23 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { XWikiError } from '../client.js';
 import type { XWikiClient } from '../client.js';
+import { pagingShape, pageOf } from './paging.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
     'xwiki_list_page_children',
     {
-      description: 'Get child pages of a wiki page. Useful for navigating page hierarchies.',
+      description: 'List the direct child pages of a wiki page, paged with start / limit. For every descendant in one call use xwiki_get_page_tree.',
       inputSchema: {
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Space1.SubSpace"'),
         page: z.string().describe('Parent page name'),
+        ...pagingShape,
       },
     },
-    async ({ space, page }) => {
+    async ({ space, page, start, limit }) => {
       try {
-        const children = await client.getPageChildren(space, page);
-        return { content: [{ type: 'text', text: JSON.stringify(children, null, 2) }] };
+        const { items, _pagination } = pageOf(await client.getPageChildren(space, page), start, limit);
+        return { content: [{ type: 'text', text: JSON.stringify({ children: items, _pagination }) }] };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found: ${space}/${page}`

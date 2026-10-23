@@ -16,7 +16,7 @@ export function register(server: McpServer, client: XWikiClient): void {
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ space, page, count: history.length, history }, null, 2),
+          text: JSON.stringify({ space, page, count: history.length, history }),
         }],
       };
     },

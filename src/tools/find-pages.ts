@@ -33,7 +33,7 @@ Filters are combined with AND when multiple are provided.`,
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ filters: { name, space, author }, count: pages.length, pages }, null, 2),
+          text: JSON.stringify({ filters: { name, space, author }, count: pages.length, pages }),
         }],
       };
     },

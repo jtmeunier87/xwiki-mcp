@@ -2,11 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 
 vi.mock('./config.js', () => ({
-  config: { baseUrl: 'https://wiki.example.com', authType: 'none', wikiName: 'xwiki', restPath: '/rest', pageLimit: 50, timeoutMs: 30000 },
+  config: { baseUrl: 'https://wiki.example.com', authType: 'none', wikiName: 'xwiki', restPath: '/rest', pageLimit: 50, timeoutMs: 30000, rateLimit: 3, logCalls: false },
 }));
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { annotationsFor, registerTools, type Access, type Register } from './registry.js';
+import { annotationsFor, registerTools, resetCallSlots, titleFor, type Access, type Register } from './registry.js';
 import type { XWikiClient } from './client.js';
 
 /** A fake server that records what was registered. */
@@ -53,11 +53,12 @@ describe('registerTools', () => {
     expect(names).toEqual(['xwiki_get_page', 'xwiki_update_object']);
     expect([...seen]).toEqual(['xwiki_get_page', 'xwiki_update_object', 'xwiki_move_page']);
     expect(calls.map(c => c.name)).toEqual(['xwiki_get_page', 'xwiki_update_object']);
-    expect(calls[0].annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
-    expect(calls[1].annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
+    expect(calls[0].annotations).toEqual({ title: 'Get page', readOnlyHint: true, openWorldHint: false });
+    expect(calls[1].annotations).toMatchObject({ title: 'Update object', readOnlyHint: false, destructiveHint: true, idempotentHint: true });
   });
 
   it('turns a thrown error into an isError result', async () => {
+    resetCallSlots();
     const { server, calls } = recorder();
     registerTools(server, client, [['read', newStyle('xwiki_get_page', () => { throw new Error('Not found: /spaces/Main/pages/X'); })]], new Set());
 
@@ -68,5 +69,33 @@ describe('registerTools', () => {
     const server = new McpServer({ name: 't', version: '0' });
     const names = registerTools(server, client, [['read', newStyle('xwiki_a')], ['delete', oldStyle('xwiki_b')]], new Set());
     expect(names).toEqual(['xwiki_a', 'xwiki_b']);
+  });
+
+  it('adds structuredContent for a JSON object result, not for other text', async () => {
+    resetCallSlots();
+    const { server, calls } = recorder();
+    registerTools(server, client, [
+      ['read', newStyle('xwiki_a', () => ({ content: [{ type: 'text', text: '{"x":1}' }] }))],
+      ['read', newStyle('xwiki_b', () => ({ content: [{ type: 'text', text: 'plain' }] }))],
+    ], new Set());
+    expect(await calls[0].cb()).toEqual({ content: [{ type: 'text', text: '{"x":1}' }], structuredContent: { x: 1 } });
+    expect(await calls[1].cb()).toEqual({ content: [{ type: 'text', text: 'plain' }] });
+  });
+
+  it('refuses calls over the per-minute rate limit', async () => {
+    resetCallSlots();
+    const { server, calls } = recorder();
+    registerTools(server, client, [['read', newStyle('xwiki_a', () => ({ content: [{ type: 'text', text: 'ok' }] }))]], new Set());
+    for (let i = 0; i < 3; i++) expect((await calls[0].cb() as { isError?: boolean }).isError).toBeUndefined();
+    const refused = await calls[0].cb() as { isError?: boolean; content: Array<{ text: string }> };
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('Rate limit reached: 3 tool calls per minute');
+  });
+});
+
+describe('titleFor', () => {
+  it('reads the name as a sentence unless overridden', () => {
+    expect(titleFor('xwiki_list_page_versions')).toBe('List page versions');
+    expect(titleFor('xwiki_query')).toBe('Query the wiki (XWQL / HQL / Solr)');
   });
 });
