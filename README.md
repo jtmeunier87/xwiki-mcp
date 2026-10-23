@@ -348,8 +348,19 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test        # 126 unit tests (mocked fetch)
+npm test        # 127 unit tests (mocked fetch)
 ```
+
+Integration tests run the built server against a real XWiki. CI does this on every push against the official Docker images (current LTS and stable); locally:
+
+```bash
+XWIKI_IT_PASSWORD=admin scripts/start-xwiki.sh lts-postgres-tomcat 8080   # throwaway XWiki + Postgres
+npm run build
+XWIKI_IT_URL=http://127.0.0.1:8080 XWIKI_IT_USER=superadmin XWIKI_IT_PASSWORD=admin npm run test:integration
+docker rm -f xwiki-it xwiki-it-db && docker network rm xwiki-it
+```
+
+They write only under a fresh `IT.Run<timestamp>` space. Point them at a disposable wiki, never a production one.
 
 ---
 
@@ -365,7 +376,7 @@ npm test        # 126 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
-- [x] v0.16.0 — CI (build and tests on Node 22 and 24, image build), release only after tests pass, actions pinned by commit, image base and supergateway pinned, Dependabot, provenance and SBOM, `SECURITY.md`, `server.json` for the MCP Registry; Origin / Host checks and 405 in HTTP mode, rate limit, toolsets, call log, titles and server instructions, files as embedded resources with a size cap, paging on every list tool, page content windows, compact JSON, `structuredContent`, secrets from files, clean shutdown
+- [x] v0.16.0 — Live integration tests against XWiki LTS and stable in CI; recycle-bin listing falls back to the core template on wikis without the standard flavor; `xwiki_query` defaults to Solr (XWiki 17.10.5 / 18.2+ allow only Solr through REST unless `rest.allowedQueryTypes` says otherwise); errors include XWiki's own message; CI (build and tests on Node 22 and 24, image build), release only after tests pass, actions pinned by commit, image base and supergateway pinned, Dependabot, provenance and SBOM, `SECURITY.md`, `server.json` for the MCP Registry; Origin / Host checks and 405 in HTTP mode, rate limit, toolsets, call log, titles and server instructions, files as embedded resources with a size cap, paging on every list tool, page content windows, compact JSON, `structuredContent`, secrets from files, clean shutdown
 - [x] v0.15.0 — Consistent tool names (breaking): `list_` for collections, `get_` for one item:
   - `xwiki_get_attachments` → `xwiki_list_attachments`
   - `xwiki_get_comments` → `xwiki_list_comments`

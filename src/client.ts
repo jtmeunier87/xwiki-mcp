@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
 import { unifiedDiff } from './diff.js';
 
 export class XWikiError extends Error {
@@ -78,7 +78,7 @@ export class XWikiClient {
       throw new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
     }
     if (!response.ok) {
-      throw new XWikiError(`XWiki server error: ${response.status}. URL: ${urlStr}`, response.status);
+      throw new XWikiError(`XWiki server error: ${response.status}${await this.errorDetail(response)}. URL: ${urlStr}`, response.status);
     }
 
     // Cache CSRF token from any GET response
@@ -200,7 +200,7 @@ export class XWikiClient {
       content: data.content,
       syntax: data.syntax,
       author: data.contentAuthor ?? data.author,
-      modified_date: data.modified,
+      modified_date: data.modified != null ? this.parseTimestamp(data.modified) : undefined,
       version: data.version,
       parent: data.parent,
       url: data.xwikiAbsoluteUrl ?? '',
@@ -476,6 +476,16 @@ export class XWikiClient {
       size_bytes: buffer.byteLength,
       download_url: downloadUrl,
     };
+  }
+
+  /** XWiki's own message from an error response (plain text, first 300 characters), so the error says what to fix. */
+  private async errorDetail(response: Response): Promise<string> {
+    try {
+      const text = (await response.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      return text ? ` (${text.slice(0, 300)})` : '';
+    } catch {
+      return '';
+    }
   }
 
   /** Refuse files over XWIKI_MCP_MAX_FILE_BYTES, so a large file never reaches the model. */
@@ -1006,7 +1016,7 @@ export class XWikiClient {
    * Note: q should be just the WHERE clause — xWiki prepends SELECT.
    * Example: "where doc.space = 'Main'" (HQL) or "where doc.author = 'XWiki.Admin'" (XWQL)
    */
-  async advancedSearch(query: string, type: 'hql' | 'xwql' | 'solr' = 'xwql', limit = 20, start = 0): Promise<QueryResult[]> {
+  async advancedSearch(query: string, type: 'hql' | 'xwql' | 'solr' = 'solr', limit = 20, start = 0): Promise<QueryResult[]> {
     // '/query' is relative to wikiBase (which is already .../wikis/xwiki)
     const data = await this.get<XWikiQueryResponse>('/query', { q: query, type, number: limit, start });
     const results = data.searchResults ?? [];
@@ -1466,7 +1476,8 @@ export class XWikiClient {
     };
     if (name) params['ddoc.fullName'] = name;
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    const data = await this.fetchActionJson<XWikiDeletedDocumentsResponse>(url.toString());
+    const data = await this.fetchActionJson<XWikiDeletedDocumentsResponse>(url.toString(), true);
+    if (data === undefined) return this.listDeletedPagesFromTemplate(name, start, limit);
     const rows = data.rows ?? [];
     return {
       pages: rows.map(r => ({
@@ -1483,6 +1494,37 @@ export class XWikiClient {
       pagination: { total: data.totalrows, start, limit, has_more: start + rows.length < (data.totalrows ?? 0) },
     };
   }
+
+  /**
+   * Fallback for wikis without XWiki.DeletedDocumentsJSON (a page of the standard flavor):
+   * the core template behind the skin's restore view, ?xpage=getdeleteddocuments. It has no
+   * name filter, so with a name the newest 1000 entries are read and filtered here.
+   */
+  private async listDeletedPagesFromTemplate(name: string | undefined, start: number, limit: number): Promise<{ pages: DeletedPage[]; pagination: Pagination }> {
+    const url = new URL(`${config.baseUrl}/bin/get/Main/WebHome`);
+    const window = name ? { offset: 1, limit: 1000 } : { offset: start + 1, limit };
+    for (const [k, v] of Object.entries({ xpage: 'getdeleteddocuments', outputSyntax: 'plain', sort: 'ddoc.date', dir: 'desc', offset: String(window.offset), limit: String(window.limit) })) {
+      url.searchParams.set(k, v);
+    }
+    const data = await this.fetchActionJson<XWikiDeletedDocumentsTemplateResponse>(url.toString(), true);
+    if (data === undefined) throw new XWikiError('This wiki has no recycle-bin listing (neither XWiki.DeletedDocumentsJSON nor the getdeleteddocuments template).', 404);
+    let pages: DeletedPage[] = (data.rows ?? []).filter(r => r.doc_viewable).map(r => ({
+      id: Number(/[?&]id=(\d+)/.exec(r.doc_restore_url ?? '')?.[1] ?? NaN),
+      page: r.doc_fullName ?? '',
+      title: r.doc_name || undefined,
+      language: r.doc_locale || undefined,
+      deleted_by: r.doc_deleter || undefined,
+      deleted_date: r.doc_date || undefined,
+      can_restore: r.doc_hasrestore ?? false,
+    }));
+    if (!name) {
+      return { pages, pagination: { total: data.totalrows, start, limit, has_more: start + pages.length < (data.totalrows ?? 0) } };
+    }
+    const needle = name.toLowerCase();
+    pages = pages.filter(p => p.page.toLowerCase().includes(needle));
+    return { pages: pages.slice(start, start + limit), pagination: { total: pages.length, start, limit, has_more: start + limit < pages.length } };
+  }
+
 
   /**
    * Restore a page from the recycle bin by its recycle-bin id (from listDeletedPages).
@@ -1737,7 +1779,10 @@ export class XWikiClient {
   }
 
   /** GET a JSON response from an action URL (/bin/get/...). */
-  private async fetchActionJson<T>(url: string): Promise<T> {
+  /** GET JSON from an action URL. With optional, an empty or non-JSON body (page missing) gives undefined. */
+  private async fetchActionJson<T>(url: string): Promise<T>;
+  private async fetchActionJson<T>(url: string, optional: true): Promise<T | undefined>;
+  private async fetchActionJson<T>(url: string, optional = false): Promise<T | undefined> {
     let response: Response;
     try {
       response = await fetch(url, {
@@ -1750,9 +1795,18 @@ export class XWikiClient {
     if (response.status === 401 || response.status === 403) {
       throw new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
     }
+    if (optional && response.status === 404) return undefined;
     if (!response.ok) throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
-    return response.json() as Promise<T>;
+    if (!optional) return response.json() as Promise<T>;
+    const text = (await response.text()).trim();
+    if (!text.startsWith('{')) return undefined;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return undefined;
+    }
   }
+
 
   // ---------------------------------------------------------------------------
   // Utility

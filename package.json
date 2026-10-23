@@ -15,7 +15,8 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run --exclude 'dist/**'",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "keywords": [
     "mcp",

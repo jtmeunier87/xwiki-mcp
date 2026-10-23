@@ -15,6 +15,7 @@ npm install          # Install dependencies
 npm run build        # Compile TypeScript
 npm run dev          # Run with tsx (development)
 npm test             # Vitest unit tests (mocked fetch, no live wiki)
+npm run test:integration  # Live tests (src/integration/live.itest.ts) against XWIKI_IT_URL; scripts/start-xwiki.sh starts one in Docker
 ```
 
 Without `XWIKI_MCP_PORT` the server speaks MCP over stdio. With it, it serves stateless Streamable HTTP on `POST /mcp` plus `GET /health`.
@@ -85,7 +86,9 @@ XWIKI_MCP_LOG_CALLS     # One JSON line per call on stderr (default: true)
 - **Classes:** The list endpoint returns `clazzs`; property attributes (e.g. StaticList `values`) come as `[{name, value}]`
 - **Action URLs:** `render_page`, `export_page`, `rollback_page`, `move_page` (`?xpage=rename&step=2`), `copy_page` (`?xpage=copy`), `move_attachment` (`?xpage=attachment/move`), `restore_deleted_page` (`/bin/undelete/`), `list_deleted_pages` (`XWiki.DeletedDocumentsJSON`) and the class editing tools (`/bin/propupdate`, `/bin/propadd`, `/bin/propdisable`, `/bin/propenable`; fields `{property}_{attribute}` and `form_token`) use `/bin/…` action URLs, not REST
 
-Mocked tests cannot prove a write is saved. Verify write changes against a real XWiki before release.
+Mocked tests cannot prove a write is saved. Add a live test for every write or `/bin/` action tool in `src/integration/live.itest.ts`; CI runs it against XWiki LTS and stable.
+- **REST query types:** since XWiki 17.10.5 / 18.2 REST queries allow only `solr` unless `rest.allowedQueryTypes` is set; XWQL / HQL fail with a 400 that says so.
+- **Link refactoring:** `move_page`'s `updateLinks` rewrites typed links (`[[doc:A.B]]`) but XWiki leaves untyped `[[A.B]]` links as they are.
 
 ## Tool Response Format
 

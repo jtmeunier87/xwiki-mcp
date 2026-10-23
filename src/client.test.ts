@@ -740,7 +740,7 @@ describe('advancedSearch', () => {
     expect(url).toContain('media=json');
   });
 
-  it('defaults to xwql type when not specified', async () => {
+  it('defaults to solr type when not specified (XWiki allows only solr by default)', async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
       json: () => Promise.resolve({ searchResults: [] }),
@@ -748,9 +748,9 @@ describe('advancedSearch', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    await new XWikiClient().advancedSearch("where doc.space = 'Sandbox'");
+    await new XWikiClient().advancedSearch("space:Sandbox");
     const [url] = fetch.mock.calls[0];
-    expect(url).toContain('type=xwql');
+    expect(url).toContain('type=solr');
   });
 
   it('supports solr query type', async () => {
@@ -1661,6 +1661,7 @@ function statefulFetch(routes: Record<string, Reply | ((u: URL, init?: RequestIn
       status,
       statusText: String(status),
       json: () => Promise.resolve(r.body ?? {}),
+      text: () => Promise.resolve(typeof r.body === 'string' ? r.body : JSON.stringify(r.body ?? {})),
       arrayBuffer: () => Promise.resolve(new TextEncoder().encode(String(r.body ?? '')).buffer),
       headers: { get: (k: string) => headers[k] ?? headers[k.toLowerCase()] ?? null },
     });
@@ -1724,6 +1725,28 @@ describe('recycle bin', () => {
     expect(url.searchParams.get('ddoc.fullName')).toBe('Guides');
     expect(url.searchParams.get('offset')).toBe('1');
     expect(url.searchParams.get('reqNo')).toBe('1');
+  });
+
+  it('falls back to the core template when DeletedDocumentsJSON is missing, filtering by name here', async () => {
+    const fetch = statefulFetch({
+      'GET /bin/get/XWiki/DeletedDocumentsJSON': { body: '' },
+      'GET /bin/get/Main/WebHome': {
+        body: {
+          totalrows: 2,
+          rows: [
+            { doc_viewable: true, doc_fullName: 'Docs.Guides.Setup', doc_name: 'Setup', doc_deleter: 'Jane Doe', doc_date: '2026/10/20', doc_hasrestore: true, doc_restore_url: '/bin/undelete/Docs/Guides/Setup?id=17&form_token=t' },
+            { doc_viewable: true, doc_fullName: 'Main.Other', doc_name: 'Other', doc_hasrestore: true, doc_restore_url: '/bin/undelete/Main/Other?id=18' },
+          ],
+        },
+      },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const { pages, pagination } = await new XWikiClient().listDeletedPages('guides', 0, 10);
+
+    expect(pages).toEqual([{ id: 17, page: 'Docs.Guides.Setup', title: 'Setup', language: undefined, deleted_by: 'Jane Doe', deleted_date: '2026/10/20', can_restore: true }]);
+    expect(pagination).toEqual({ total: 1, start: 0, limit: 10, has_more: false });
+    expect(new URL(fetch.mock.calls[1][0]).searchParams.get('xpage')).toBe('getdeleteddocuments');
   });
 
   it('restores a page by id and confirms it exists', async () => {

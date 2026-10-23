@@ -1,0 +1,37 @@
+name: Integration
+
+# Runs the tools against a real XWiki (official Docker image), because mocked unit tests
+# cannot prove that a write or a /bin/ action form works.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-xwiki:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        xwiki: [lts-postgres-tomcat, stable-postgres-tomcat]
+    env:
+      XWIKI_IT_URL: http://127.0.0.1:8080
+      XWIKI_IT_USER: superadmin
+      XWIKI_IT_PASSWORD: integration-test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start XWiki ${{ matrix.xwiki }}
+        run: scripts/start-xwiki.sh ${{ matrix.xwiki }} 8080
+      - run: npm run test:integration
+      - name: XWiki log on failure
+        if: failure()
+        run: docker logs xwiki-it 2>&1 | tail -200

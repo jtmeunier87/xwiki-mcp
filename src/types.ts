@@ -550,8 +550,8 @@ export interface DeletedPage {
   /** Pages deleted together share a batch id */
   batch_id?: string;
   can_restore: boolean;
-  /** A page exists at the reference again, so it cannot be restored there */
-  page_exists_again: boolean;
+  /** A page exists at the reference again, so it cannot be restored there (not reported by the fallback listing) */
+  page_exists_again?: boolean;
 }
 
 export interface RestorePageResult {
@@ -603,4 +603,18 @@ export interface VersionComparison {
   lines_removed: number;
   /** Unified diff of the page content ("" when identical) */
   diff: string;
+}
+
+export interface XWikiDeletedDocumentsTemplateResponse {
+  totalrows?: number;
+  rows?: Array<{
+    doc_viewable?: boolean;
+    doc_fullName?: string;
+    doc_name?: string;
+    doc_locale?: string;
+    doc_date?: string;
+    doc_deleter?: string;
+    doc_hasrestore?: boolean;
+    doc_restore_url?: string;
+  }>;
 }
