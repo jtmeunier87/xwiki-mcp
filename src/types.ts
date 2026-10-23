@@ -433,3 +433,83 @@ export interface PageTree {
   /** Depth-first order, each page followed by its descendants */
   pages: PageTreeNode[];
 }
+
+export interface XWikiClassObjectSummaryRaw {
+  className: string;
+  number: number;
+  pageId?: string;
+  space?: string;
+  pageName?: string;
+  pageVersion?: string;
+  pageAuthor?: string;
+  headline?: string;
+}
+
+export interface ClassObject {
+  page: string;
+  space: string;
+  page_name: string;
+  number: number;
+  page_version?: string;
+  page_author?: string;
+  /** Value of the object's first property (XWiki's "headline") */
+  headline?: string;
+  /** All property values, when include_properties is on */
+  properties?: Record<string, unknown>;
+}
+
+export interface AttachmentSearchResult {
+  name: string;
+  page: string;
+  size_bytes?: number;
+  mime_type?: string;
+  author?: string;
+  date?: string;
+  version?: string;
+  download_url: string;
+}
+
+export interface TagRemoveResult {
+  removed: string[];
+  not_found: string[];
+  tags: string[];
+}
+
+export interface MovePageResult {
+  from: string;
+  to: string;
+  children_moved: boolean;
+  links_updated: boolean;
+  redirect_left: boolean;
+  url?: string;
+  status: 'moved';
+}
+
+export interface XWikiRequiredRightsResponse {
+  analysisResults?: Array<{
+    entityReference?: string;
+    locale?: string;
+    summaryMessageHTML?: string;
+    detailedMessageHTML?: string;
+    requiredRights?: Array<{ right: string; entityType?: string; manualReviewNeeded?: boolean }>;
+  }>;
+  currentRights?: { enforce?: boolean; rights?: Array<{ right: string; scope?: string }> };
+  availableRights?: Array<{
+    right: string;
+    scope?: string;
+    displayName?: string;
+    hasRight?: boolean;
+    definitelyRequiredRight?: boolean;
+    maybeRequiredRight?: boolean;
+  }>;
+}
+
+export interface RequiredRightsReport {
+  page: string;
+  /** Rights the page declares, and whether XWiki enforces them */
+  declared: { enforce: boolean; rights: Array<{ right: string; scope?: string }> };
+  /** Rights the analysis says the content needs, with whether the current user (the MCP account) has them */
+  needed: Array<{ right: string; scope?: string; definitely: boolean; current_user_has: boolean }>;
+  /** What in the page needs each right (plain-text summaries) */
+  findings: Array<{ entity: string; summary: string; rights: Array<{ right: string; entity_type?: string; manual_review: boolean }> }>;
+}

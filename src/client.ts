@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport } from './types.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -1157,6 +1157,244 @@ export class XWikiClient {
       name: data.name ?? propertyName,
       value: data.value ?? null,
       type: data.type,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // v0.13: objects by class, tag removal, attachment search, move, required rights
+  // ---------------------------------------------------------------------------
+
+  /**
+   * List the objects of one class across the whole wiki, ordered by page then object number.
+   * Endpoint: GET /wikis/xwiki/classes/{className}/objects?start=&number=&order=
+   * The endpoint returns summaries (first property as "headline"); with includeProperties
+   * each object is also read in full, a few at a time.
+   * Pages the user cannot view are dropped server-side, so a page of results can be short.
+   */
+  async listClassObjects(
+    className: string,
+    start = 0,
+    limit = 50,
+    order: 'page' | 'date' = 'page',
+    includeProperties = true,
+  ): Promise<{ objects: ClassObject[]; pagination: Pagination }> {
+    const params: Record<string, string | number> = { start, number: limit };
+    if (order === 'date') params['order'] = 'date';
+    const data = await this.get<{ objectSummaries?: XWikiClassObjectSummaryRaw[] }>(
+      `/classes/${encodeURIComponent(className)}/objects`, params);
+    const summaries = data.objectSummaries ?? [];
+    const objects: ClassObject[] = summaries.map(o => {
+      const space = o.space ?? '';
+      const pageName = o.pageName ?? '';
+      return {
+        page: space ? `${space}.${pageName}` : (o.pageId ?? '').replace(/^[^:]*:/, ''),
+        space,
+        page_name: pageName,
+        number: o.number,
+        page_version: o.pageVersion,
+        page_author: o.pageAuthor?.replace(/^xwiki:XWiki\./, ''),
+        headline: o.headline,
+      };
+    });
+    if (includeProperties) {
+      const full = await this.mapLimit(objects, 6, o => this.getObject(o.space, o.page_name, className, o.number));
+      objects.forEach((o, i) => { o.properties = full[i].properties; });
+    }
+    return {
+      objects,
+      pagination: { start, limit, has_more: summaries.length === limit },
+    };
+  }
+
+  /**
+   * Remove tags from a page, keeping the others.
+   * Endpoint: PUT /spaces/.../pages/{pg}/tags (the body replaces the page's whole tag list)
+   */
+  async removeTags(space: string, page: string, tags: string[]): Promise<TagRemoveResult> {
+    const existing = (await this.getTags(space, page)).map(t => t.name);
+    const drop = new Set(tags);
+    const kept = existing.filter(t => !drop.has(t));
+    const removed = existing.filter(t => drop.has(t));
+    const notFound = tags.filter(t => !existing.includes(t));
+    if (removed.length > 0) {
+      const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/tags`;
+      const tagElements = kept.map(t => `  <tag name="${this.escapeXml(t)}"/>`).join('\n');
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<tags xmlns="http://www.xwiki.org">\n${tagElements}\n</tags>`;
+      await this.mutate('PUT', path, xml, 'application/xml');
+    }
+    return { removed, not_found: notFound, tags: kept };
+  }
+
+  /**
+   * Find attachments wiki-wide, or within one space and its subspaces.
+   * Endpoints: GET /wikis/xwiki/attachments, GET /spaces/{s}/attachments
+   * Filters (name, page, space, author) match parts of the value; types is a
+   * comma-separated list of media types or parts of them (e.g. "image,pdf").
+   */
+  async searchAttachments(
+    filters: { space?: string; name?: string; page?: string; author?: string; types?: string },
+    start = 0,
+    limit = 25,
+  ): Promise<{ attachments: AttachmentSearchResult[]; pagination: Pagination }> {
+    const params: Record<string, string | number> = { start, number: limit };
+    if (filters.name) params['name'] = filters.name;
+    if (filters.page) params['page'] = filters.page;
+    if (filters.author) params['author'] = filters.author;
+    if (filters.types) params['types'] = filters.types;
+    const path = filters.space ? `${this.spacePath(filters.space)}/attachments` : '/attachments';
+    const data = await this.get<{ attachments?: Array<XWikiAttachmentRaw & { pageId?: string; version?: string }> }>(path, params);
+    const items = data.attachments ?? [];
+    return {
+      attachments: items.map(a => ({
+        name: a.name,
+        page: (a.pageId ?? '').replace(/^[^:]*:/, ''),
+        size_bytes: a.longSize ?? a.size,
+        mime_type: a.mimeType,
+        author: a.author?.replace(/^xwiki:XWiki\./, ''),
+        date: a.date != null ? this.parseTimestamp(a.date) : undefined,
+        version: a.version,
+        download_url: a.xwikiAbsoluteUrl ?? '',
+      })),
+      pagination: { start, limit, has_more: items.length === limit },
+    };
+  }
+
+  /**
+   * Move or rename a page, the way the wiki's Rename action does: history is kept and,
+   * by default, child pages move with it and links to it are updated.
+   * Uses the action URL /bin/view/{spaces}/{page}?xpage=rename&step=2 (form_token required),
+   * which runs the rename job and waits for it. The REST jobs API would need programming rights.
+   * The target is given as its final reference; a WebHome target is a nested page
+   * (Docs.Manuals + WebHome), any other name a terminal page (Docs.Guides + Install).
+   * Needs delete right on the source and edit right on the target.
+   */
+  async movePage(
+    space: string,
+    page: string,
+    targetSpace: string,
+    targetPage: string,
+    options: { children?: boolean; updateLinks?: boolean; autoRedirect?: boolean; newTitle?: string } = {},
+  ): Promise<MovePageResult> {
+    const from = `${space}.${page}`;
+    const to = `${targetSpace}.${targetPage}`;
+    if (from === to) throw new XWikiError(`Source and target are the same page: ${from}`, 400);
+
+    // The rename form names the target by parent space + name; for a nested (WebHome)
+    // target the name is its last space.
+    const terminal = targetPage !== 'WebHome';
+    const i = targetSpace.lastIndexOf('.');
+    const newSpaceName = terminal ? targetSpace : (i > 0 ? targetSpace.slice(0, i) : '');
+    const newPageName = terminal ? targetPage : targetSpace.slice(i + 1);
+    const children = options.children ?? true;
+    const updateLinks = options.updateLinks ?? true;
+    const autoRedirect = options.autoRedirect ?? false;
+
+    // The source must exist (REST 404 otherwise) and the target must not.
+    await this.getPage(space, page);
+    try {
+      await this.getPage(targetSpace, targetPage);
+      throw new XWikiError(`Target page already exists: ${to}`, 409);
+    } catch (e) {
+      if (!(e instanceof XWikiError && e.status === 404)) throw e;
+    }
+
+    const form = new URLSearchParams({
+      xpage: 'rename',
+      step: '2',
+      newSpaceName,
+      newPageName,
+      terminal: String(terminal),
+      deep: String(children),
+      updateLinks: String(updateLinks),
+      autoRedirect: String(autoRedirect),
+      form_token: await this.getCsrfToken(),
+    });
+    if (options.newTitle) form.set('newPageTitle', options.newTitle);
+
+    const actionPath = [...space.split('.'), page].map(encodeURIComponent).join('/');
+    const url = `${config.baseUrl}/bin/view/${actionPath}`;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { ...this.authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(120_000),
+      });
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new XWikiError('Authentication or permission error. Moving a page needs delete right on it and edit right on the target.', response.status);
+    }
+    if (response.status === 409) throw new XWikiError(`Target page already exists: ${to}`, 409);
+    if (response.status >= 400) {
+      throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
+    }
+    // Success redirects to the rename status page (renameId); anything else means the
+    // form was shown again (e.g. a stale form_token) and nothing moved.
+    const location = response.headers.get('location') ?? '';
+    if (!(response.status >= 300 && response.status < 400 && location.includes('renameId'))) {
+      this.csrfToken = null;
+      throw new XWikiError(`Move was not started (HTTP ${response.status}). Nothing was changed; try again.`, response.status);
+    }
+
+    // The job ran before the redirect; confirm the result from the target page.
+    let moved: Page;
+    try {
+      moved = await this.getPage(targetSpace, targetPage);
+    } catch (e) {
+      if (e instanceof XWikiError && e.status === 404) {
+        throw new XWikiError(`Move did not complete: ${to} does not exist. Check the page's rename status in the wiki.`, 500);
+      }
+      throw e;
+    }
+    return {
+      from,
+      to,
+      children_moved: children && !terminal,
+      links_updated: updateLinks,
+      redirect_left: autoRedirect,
+      url: moved.url,
+      status: 'moved',
+    };
+  }
+
+  /**
+   * Analyse which rights a page's content needs (scripts, macros, HTML) against the
+   * rights the page declares. XWiki 17.4+; needs edit right on the page.
+   * Endpoint: GET /spaces/.../pages/{pg}/requiredRights
+   */
+  async getRequiredRights(space: string, page: string): Promise<RequiredRightsReport> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/requiredRights`;
+    const data = await this.get<XWikiRequiredRightsResponse>(path);
+    const text = (html?: string) => (html ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+    return {
+      page: `${space}.${page}`,
+      declared: {
+        enforce: data.currentRights?.enforce ?? false,
+        rights: (data.currentRights?.rights ?? []).map(r => ({ right: r.right, scope: r.scope || undefined })),
+      },
+      needed: (data.availableRights ?? [])
+        .filter(r => r.definitelyRequiredRight || r.maybeRequiredRight)
+        .map(r => ({
+          right: r.right,
+          scope: r.scope || undefined,
+          definitely: r.definitelyRequiredRight ?? false,
+          current_user_has: r.hasRight ?? false,
+        })),
+      findings: (data.analysisResults ?? []).map(a => ({
+        entity: a.entityReference ?? '',
+        summary: text(a.summaryMessageHTML),
+        rights: (a.requiredRights ?? []).map(r => ({
+          right: r.right,
+          entity_type: r.entityType || undefined,
+          manual_review: r.manualReviewNeeded ?? false,
+        })),
+      })),
     };
   }
 

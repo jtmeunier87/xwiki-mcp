@@ -8,15 +8,15 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 37 tools across 7 categories
+## 42 tools across 7 categories
 
 | Category | Count | Tools |
 |---|---|---|
-| **Pages (Read)** | 6 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_get_page_tree`, `xwiki_search` |
-| **Pages (Write) & Comments** | 5 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_delete_page`, `xwiki_add_comment`, `xwiki_get_comments` |
-| **Attachments** | 4 | `xwiki_get_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
-| **Tags** | 2 | `xwiki_get_tags`, `xwiki_add_tags` |
-| **Classes & Objects** | 9 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_get_page_tree`, `xwiki_search`, `xwiki_get_required_rights` |
+| **Pages (Write) & Comments** | 6 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_delete_page`, `xwiki_add_comment`, `xwiki_get_comments` |
+| **Attachments** | 5 | `xwiki_get_attachments`, `xwiki_search_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
+| **Tags** | 3 | `xwiki_get_tags`, `xwiki_add_tags`, `xwiki_remove_tags` |
+| **Classes & Objects** | 10 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
 | **History & Query** | 6 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_rollback_page`, `xwiki_advanced_search`, `xwiki_render_page`, `xwiki_get_recent_changes` |
 | **Wiki-Level** | 5 | `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag`, `xwiki_find_pages`, `xwiki_export_page`, `xwiki_get_object_property` |
 
@@ -81,11 +81,11 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 
 | Mode | Settings | Tools |
 |---|---|---|
-| Read/write, no delete (default) | — | 34: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
-| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 37 |
-| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 24 read tools |
+| Read/write, no delete (default) | — | 39: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
+| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 42 |
+| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 27 read tools |
 
-Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_add_comment`, `xwiki_upload_attachment`, `xwiki_add_tags`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
+Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_add_comment`, `xwiki_upload_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
 
 > **Changed in 0.10.0:** delete tools are off unless `XWIKI_MCP_ALLOW_DELETE=true`.
 
@@ -113,6 +113,9 @@ Report the whole page tree under a root page in one call. Each descendant comes 
 #### `xwiki_search`
 Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
 
+#### `xwiki_get_required_rights`
+Analyse which rights a page's content needs (script or programming right for Velocity/Groovy, admin right for some macros) and compare them with the rights the page declares. Returns `declared`, `needed` (with whether the MCP account has each right) and plain-text `findings`. xWiki 17.4+; needs edit right on the page.
+
 ### Page Write Tools
 
 #### `xwiki_create_page`
@@ -120,6 +123,9 @@ Create a new page with title, content, optional parent, and optional syntax.
 
 #### `xwiki_update_page`
 Update an existing page. Fetches current version first to preserve fields not specified.
+
+#### `xwiki_move_page`
+Move or rename a page, as the wiki's Rename action does: history, objects, attachments and comments go with it. The target is given as its final reference (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `Install` for a terminal one). `children` (default true) moves child pages, `update_links` (default true) rewrites links across the wiki, `auto_redirect` (default false) leaves a redirect at the old reference, `new_title` sets a new title. Fails if the target exists. Needs delete right on the source and edit right on the target. A write tool: it removes nothing but the page no longer exists at its old reference.
 
 #### `xwiki_delete_page`
 Permanently delete a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
@@ -134,6 +140,9 @@ List all comments on a page.
 
 #### `xwiki_get_attachments`
 List attachments on a page with name, size, MIME type, and download URL.
+
+#### `xwiki_search_attachments`
+Find attachments across the wiki, or within one space and its subspaces. Filters match part of the value: `name`, `page`, `author`; `types` is a comma-separated list of media types or parts (`image`, `application/pdf`). Paged with `start` / `limit` (default 25).
 
 #### `xwiki_upload_attachment`
 Upload a file (base64-encoded) to a page.
@@ -151,6 +160,9 @@ Get tags on a specific page.
 
 #### `xwiki_add_tags`
 Add tags to a page (additive — preserves existing tags, no duplicates).
+
+#### `xwiki_remove_tags`
+Remove tags from a page, keeping the others. Returns the tags removed, any that were not on the page, and the remaining tags.
 
 ### Class & Object Tools
 
@@ -171,6 +183,9 @@ List all XObjects on a page. Optionally filter by `class_name`.
 
 #### `xwiki_get_object`
 Get a single object by class name and object number (0-based).
+
+#### `xwiki_list_class_objects`
+List the objects of one class across the whole wiki with the page each one is on, ordered by page (or by page date with `order: "date"`). `include_properties` (default true) adds every property value, one request per object. Paged with `start` / `limit` (default 50); pages the account cannot view are left out, so keep paging while `has_more` is true.
 
 #### `xwiki_create_object`
 Create a new XObject on a page with class name and property key-value map.
@@ -229,6 +244,7 @@ Read a single named property from an XObject — more efficient than `xwiki_get_
 - **History timestamps**: History endpoints return Unix milliseconds — automatically converted to ISO strings.
 - **Modifier prefix**: `xwiki:XWiki.` prefix stripped from all user references in display output.
 - **Render URL**: `xwiki_render_page` and `xwiki_export_page` use `/bin/get/` and `/bin/export/` action URLs, not the REST API.
+- **Move**: `xwiki_move_page` posts the wiki's own rename form (`/bin/view/{page}?xpage=rename&step=2` with `form_token`), which runs the rename job and waits for it; the REST jobs API would need programming rights. The tool then reads the target back.
 - **`xwiki_get_object_property`**: Single-property endpoint returns the property at root level (not in a `properties` array) — confirmed against xWiki 18.x.
 - **`xwiki_find_pages`**: The wiki-wide pages endpoint can return duplicates — automatically deduplicated by `fullName`.
 
@@ -241,7 +257,7 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test        # 86 unit tests (mocked fetch)
+npm test        # 96 unit tests (mocked fetch)
 ```
 
 ---
@@ -258,6 +274,7 @@ npm test        # 86 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.13.0 — `xwiki_list_class_objects`, `xwiki_remove_tags`, `xwiki_search_attachments`, `xwiki_move_page`, `xwiki_get_required_rights`
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)
 
 ---

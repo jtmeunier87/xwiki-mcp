@@ -1413,3 +1413,222 @@ describe('getPageTree', () => {
     await expect(new XWikiClient().getPageTree('Docs', 'Missing')).rejects.toMatchObject({ status: 404 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// v0.13 tools
+// ---------------------------------------------------------------------------
+
+/** Route mocked responses by method + REST path (or full action URL). */
+function routeFetch(routes: Record<string, { status?: number; body?: unknown; headers?: Record<string, string> }>) {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const u = new URL(url);
+    const key = `${init?.method ?? 'GET'} ${u.pathname.replace('/rest/wikis/xwiki', '')}`;
+    const r = routes[key] ?? { status: 404, body: {} };
+    const status = r.status ?? 200;
+    const headers: Record<string, string> = { 'XWiki-Form-Token': 'test-csrf-token', ...(r.headers ?? {}) };
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: String(status),
+      json: () => Promise.resolve(r.body ?? {}),
+      headers: { get: (k: string) => headers[k] ?? headers[k.toLowerCase()] ?? null },
+    });
+  });
+}
+
+describe('listClassObjects', () => {
+  const summaries = {
+    objectSummaries: [
+      { className: 'Sandbox.Code.ExampleClass', number: 0, pageId: 'xwiki:Docs.Guides.Setup', space: 'Docs.Guides', pageName: 'Setup', pageVersion: '3.1', pageAuthor: 'xwiki:XWiki.JaneDoe', headline: 'First' },
+      { className: 'Sandbox.Code.ExampleClass', number: 1, pageId: 'xwiki:Docs.Guides.Setup', space: 'Docs.Guides', pageName: 'Setup', headline: 'Second' },
+    ],
+  };
+
+  it('maps summaries and reads each object in full', async () => {
+    const fetch = routeFetch({
+      'GET /classes/Sandbox.Code.ExampleClass/objects': { body: summaries },
+      'GET /spaces/Docs/spaces/Guides/pages/Setup/objects/Sandbox.Code.ExampleClass/0': { body: { className: 'Sandbox.Code.ExampleClass', number: 0, properties: [{ name: 'status', value: 'open' }] } },
+      'GET /spaces/Docs/spaces/Guides/pages/Setup/objects/Sandbox.Code.ExampleClass/1': { body: { className: 'Sandbox.Code.ExampleClass', number: 1, properties: [{ name: 'status', value: 'done' }] } },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const { objects, pagination } = await new XWikiClient().listClassObjects('Sandbox.Code.ExampleClass', 0, 2);
+
+    expect(objects[0]).toMatchObject({ page: 'Docs.Guides.Setup', space: 'Docs.Guides', page_name: 'Setup', number: 0, page_author: 'JaneDoe', headline: 'First', properties: { status: 'open' } });
+    expect(objects[1].properties).toEqual({ status: 'done' });
+    expect(pagination).toEqual({ start: 0, limit: 2, has_more: true });
+    expect(String(fetch.mock.calls[0][0])).toContain('number=2');
+  });
+
+  it('skips the per-object reads without include_properties and passes order=date', async () => {
+    const fetch = routeFetch({ 'GET /classes/Sandbox.Code.ExampleClass/objects': { body: summaries } });
+    vi.stubGlobal('fetch', fetch);
+
+    const { objects, pagination } = await new XWikiClient().listClassObjects('Sandbox.Code.ExampleClass', 0, 50, 'date', false);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(fetch.mock.calls[0][0])).toContain('order=date');
+    expect(objects[0].properties).toBeUndefined();
+    expect(pagination.has_more).toBe(false);
+  });
+});
+
+describe('removeTags', () => {
+  it('PUTs the remaining tags and reports what was removed', async () => {
+    const fetch = routeFetch({
+      'GET /spaces/Main/pages/WebHome/tags': { body: { tags: [{ name: 'draft' }, { name: 'guide' }, { name: 'review' }] } },
+      'GET ': { body: {} },
+      'PUT /spaces/Main/pages/WebHome/tags': { body: {} },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().removeTags('Main', 'WebHome', ['draft', 'review', 'missing']);
+
+    expect(result).toEqual({ removed: ['draft', 'review'], not_found: ['missing'], tags: ['guide'] });
+    const put = fetch.mock.calls.find(c => c[1]?.method === 'PUT')!;
+    expect(put[1].body).toContain('<tag name="guide"/>');
+    expect(put[1].body).not.toContain('draft');
+  });
+
+  it('does not write when none of the tags are on the page', async () => {
+    const fetch = routeFetch({ 'GET /spaces/Main/pages/WebHome/tags': { body: { tags: [{ name: 'guide' }] } } });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().removeTags('Main', 'WebHome', ['draft']);
+
+    expect(result).toEqual({ removed: [], not_found: ['draft'], tags: ['guide'] });
+    expect(fetch.mock.calls.some(c => c[1]?.method === 'PUT')).toBe(false);
+  });
+});
+
+describe('searchAttachments', () => {
+  const body = {
+    attachments: [{ name: 'diagram.png', pageId: 'xwiki:Docs.Guides.Setup', longSize: 2048, mimeType: 'image/png', author: 'xwiki:XWiki.JaneDoe', date: 1700000000000, version: '1.2', xwikiAbsoluteUrl: 'https://wiki.example.com/download/diagram.png' }],
+  };
+
+  it('searches the whole wiki with filters', async () => {
+    const fetch = routeFetch({ 'GET /attachments': { body } });
+    vi.stubGlobal('fetch', fetch);
+
+    const { attachments, pagination } = await new XWikiClient().searchAttachments({ name: 'diagram', types: 'image' }, 0, 25);
+
+    expect(attachments[0]).toMatchObject({ name: 'diagram.png', page: 'Docs.Guides.Setup', size_bytes: 2048, mime_type: 'image/png', author: 'JaneDoe', version: '1.2' });
+    expect(attachments[0].date).toMatch(/^2023-/);
+    expect(pagination.has_more).toBe(false);
+    const url = String(fetch.mock.calls[0][0]);
+    expect(url).toContain('name=diagram');
+    expect(url).toContain('types=image');
+  });
+
+  it('uses the space endpoint when a space is given', async () => {
+    const fetch = routeFetch({ 'GET /spaces/Docs/spaces/Guides/attachments': { body } });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().searchAttachments({ space: 'Docs.Guides' });
+
+    expect(String(fetch.mock.calls[0][0])).toContain('/spaces/Docs/spaces/Guides/attachments');
+  });
+});
+
+describe('movePage', () => {
+  const page = (url: string) => ({ body: { id: 'x', fullName: 'x', title: 'T', content: '', syntax: 'xwiki/2.1', xwikiAbsoluteUrl: url } });
+  const renameOk = { headers: { location: 'https://wiki.example.com/bin/view/Docs/Guides/?xpage=rename&renameId=123' } };
+
+  it('posts the rename form for a nested page and confirms the target', async () => {
+    let moved = false;
+    const rest = routeFetch({
+      'GET /spaces/Docs/spaces/Guides/pages/WebHome': page('https://wiki.example.com/bin/view/Docs/Guides/'),
+      'GET ': { body: {} },
+    });
+    const fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.startsWith('https://wiki.example.com/bin/view/')) {
+        moved = true;
+        return Promise.resolve({ ok: false, status: 302, statusText: '302', json: () => Promise.resolve({}),
+          headers: { get: (k: string) => (k === 'location' ? renameOk.headers.location : null) } });
+      }
+      // The target exists only after the rename form was posted.
+      if (url.includes('/spaces/Docs/spaces/Manuals/pages/WebHome')) {
+        return moved
+          ? Promise.resolve({ ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve(page('https://wiki.example.com/bin/view/Docs/Manuals/').body), headers: { get: () => null } })
+          : Promise.resolve({ ok: false, status: 404, statusText: '404', json: () => Promise.resolve({}), headers: { get: () => null } });
+      }
+      return rest(url, init);
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().movePage('Docs.Guides', 'WebHome', 'Docs.Manuals', 'WebHome');
+
+    expect(result).toMatchObject({ from: 'Docs.Guides.WebHome', to: 'Docs.Manuals.WebHome', url: 'https://wiki.example.com/bin/view/Docs/Manuals/', children_moved: true, links_updated: true, redirect_left: false, status: 'moved' });
+    const post = fetch.mock.calls.find(c => c[1]?.method === 'POST')!;
+    expect(post[0]).toBe('https://wiki.example.com/bin/view/Docs/Guides/WebHome');
+    const form = new URLSearchParams(String(post[1].body));
+    expect(Object.fromEntries(form)).toMatchObject({
+      xpage: 'rename', step: '2', newSpaceName: 'Docs', newPageName: 'Manuals', terminal: 'false',
+      deep: 'true', updateLinks: 'true', autoRedirect: 'false', form_token: 'test-csrf-token',
+    });
+  });
+
+  it('maps a terminal target and refuses an existing target', async () => {
+    const fetch = routeFetch({
+      'GET /spaces/Docs/spaces/Guides/pages/Setup': page('u'),
+      'GET /spaces/Docs/spaces/Guides/pages/Install': page('u'),
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(new XWikiClient().movePage('Docs.Guides', 'Setup', 'Docs.Guides', 'Install'))
+      .rejects.toMatchObject({ status: 409 });
+    expect(fetch.mock.calls.some(c => c[1]?.method === 'POST')).toBe(false);
+  });
+
+  it('reports a move that was not started when XWiki does not redirect to the status page', async () => {
+    const fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.startsWith('https://wiki.example.com/bin/view/')) {
+        return Promise.resolve({ ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve({}), headers: { get: () => null } });
+      }
+      return routeFetch({ 'GET /spaces/Docs/spaces/Guides/pages/Setup': page('u'), 'GET ': { body: {} } })(url, init);
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(new XWikiClient().movePage('Docs.Guides', 'Setup', 'Docs.Guides', 'Install'))
+      .rejects.toThrow('Move was not started');
+    const post = fetch.mock.calls.find(c => c[1]?.method === 'POST')!;
+    const form = new URLSearchParams(String(post[1].body));
+    expect(form.get('newSpaceName')).toBe('Docs.Guides');
+    expect(form.get('newPageName')).toBe('Install');
+    expect(form.get('terminal')).toBe('true');
+  });
+});
+
+describe('getRequiredRights', () => {
+  it('summarises declared rights, needed rights and findings as plain text', async () => {
+    vi.stubGlobal('fetch', routeFetch({
+      'GET /spaces/Main/pages/WebHome/requiredRights': {
+        body: {
+          analysisResults: [{
+            entityReference: 'xwiki:Main.WebHome',
+            summaryMessageHTML: '<p>The <strong>groovy</strong> macro needs &quot;programming&quot; right.</p>',
+            requiredRights: [{ right: 'programming', entityType: 'DOCUMENT', manualReviewNeeded: false }],
+          }],
+          currentRights: { enforce: true, rights: [{ right: 'script', scope: 'DOCUMENT' }] },
+          availableRights: [
+            { right: 'script', scope: 'DOCUMENT', hasRight: true, definitelyRequiredRight: false, maybeRequiredRight: false },
+            { right: 'programming', scope: '', hasRight: false, definitelyRequiredRight: true, maybeRequiredRight: false },
+          ],
+        },
+      },
+    }));
+
+    const report = await new XWikiClient().getRequiredRights('Main', 'WebHome');
+
+    expect(report).toEqual({
+      page: 'Main.WebHome',
+      declared: { enforce: true, rights: [{ right: 'script', scope: 'DOCUMENT' }] },
+      needed: [{ right: 'programming', scope: undefined, definitely: true, current_user_has: false }],
+      findings: [{
+        entity: 'xwiki:Main.WebHome',
+        summary: 'The groovy macro needs "programming" right.',
+        rights: [{ right: 'programming', entity_type: 'DOCUMENT', manual_review: false }],
+      }],
+    });
+  });
+});

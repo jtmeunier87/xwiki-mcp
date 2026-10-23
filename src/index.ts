@@ -60,6 +60,13 @@ import { register as registerFindPages } from './tools/find-pages.js';
 import { register as registerExportPage } from './tools/export-page.js';
 import { register as registerGetObjectProperty } from './tools/get-object-property.js';
 
+// v0.13: objects by class, tag removal, attachment search, move, required rights
+import { register as registerListClassObjects } from './tools/list-class-objects.js';
+import { register as registerRemoveTags } from './tools/remove-tags.js';
+import { register as registerSearchAttachments } from './tools/search-attachments.js';
+import { register as registerMovePage } from './tools/move-page.js';
+import { register as registerGetRequiredRights } from './tools/get-required-rights.js';
+
 type Access = 'read' | 'write' | 'delete';
 type Register = (server: McpServer, client: XWikiClient) => void;
 
@@ -75,12 +82,15 @@ const TOOLS: Array<[Access, Register]> = [
   ['read', registerGetPageTree],
   ['write', registerCreatePage],
   ['write', registerUpdatePage],
+  ['write', registerMovePage],
   ['delete', registerDeletePage],
+  ['read', registerGetRequiredRights],
   ['read', registerGetComments],
   ['write', registerAddComment],
 
   // Attachments
   ['read', registerGetAttachments],
+  ['read', registerSearchAttachments],
   ['read', registerDownloadAttachment],
   ['write', registerUploadAttachment],
   ['delete', registerDeleteAttachment],
@@ -88,6 +98,7 @@ const TOOLS: Array<[Access, Register]> = [
   // Tags
   ['read', registerGetTags],
   ['write', registerAddTags],
+  ['write', registerRemoveTags],
 
   // Classes and objects
   ['read', registerListClasses],
@@ -96,6 +107,7 @@ const TOOLS: Array<[Access, Register]> = [
   ['write', registerAddClassProperty],
   ['read', registerListObjects],
   ['read', registerGetObject],
+  ['read', registerListClassObjects],
   ['write', registerCreateObject],
   ['write', registerUpdateObject],
   ['delete', registerDeleteObject],

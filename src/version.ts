@@ -1,2 +1,2 @@
 // Single source of the server version (keep in step with package.json).
-export const VERSION = '0.12.1';
+export const VERSION = '0.13.0';
