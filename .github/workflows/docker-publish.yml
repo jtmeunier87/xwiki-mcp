@@ -5,16 +5,40 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Tag matches package.json version
+        run: |
+          V="${GITHUB_REF#refs/tags/v}"
+          test "$V" = "$(node -p 'require("./package.json").version')"
+          test "$V" = "$(node -p 'require("./server.json").version')"
+          test "ghcr.io/jtmeunier87/xwiki-mcp:$V" = "$(node -p 'require("./server.json").packages[0].identifier')"
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
   publish-docker:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -22,23 +46,20 @@ jobs:
 
       - name: Extract version tag
         id: tag
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
-      - run: docker context create builders
-
-      - uses: docker/setup-buildx-action@v3
-        with:
-          version: latest
-          endpoint: builders
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          provenance: mode=max
+          sbom: true
           tags: |
             ghcr.io/jtmeunier87/xwiki-mcp:latest
             ghcr.io/jtmeunier87/xwiki-mcp:${{ steps.tag.outputs.VERSION }}

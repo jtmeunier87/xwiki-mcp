@@ -65,6 +65,33 @@ Endpoints: `POST /mcp` (MCP), `GET /health` (version, enabled tool count, access
 
 Against DNS rebinding, a request that carries an `Origin` header (browsers send one) is refused with 403 unless the origin is listed in `XWIKI_MCP_ALLOWED_ORIGINS`; set `XWIKI_MCP_ALLOWED_HOSTS` to also require a known `Host` header. Non-browser MCP clients send no `Origin` and are unaffected. `GET` and `DELETE` on `/mcp` return 405: the server is stateless, with no standalone event stream and no sessions.
 
+### Docker
+
+Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/arm64, with build provenance and an SBOM). The image runs the server over stdio as a non-root user and also contains [supergateway](https://github.com/supercorp-ai/supergateway) (pinned) to serve it over Streamable HTTP:
+
+```yaml
+services:
+  xwiki-mcp:
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.16.0
+    entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
+                 "--port", "8000", "--healthEndpoint", "/healthz"]
+    environment:
+      XWIKI_BASE_URL: https://wiki.example.com
+      XWIKI_USERNAME: mcp-agent
+      XWIKI_PASSWORD_FILE: /run/secrets/xwiki_password
+    secrets: [xwiki_password]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+secrets:
+  xwiki_password:
+    file: ./xwiki_password.txt
+```
+
+Or set `XWIKI_MCP_PORT` and use the built-in HTTP mode, whose `GET /health` serves the same purpose.
+
 ### Environment Variables
 
 | Variable | Required | Default | Description |
@@ -338,7 +365,7 @@ npm test        # 126 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
-- [x] v0.16.0 — Origin / Host checks and 405 in HTTP mode, rate limit, toolsets, call log, titles and server instructions, files as embedded resources with a size cap, paging on every list tool, page content windows, compact JSON, `structuredContent`, secrets from files, clean shutdown
+- [x] v0.16.0 — CI (build and tests on Node 22 and 24, image build), release only after tests pass, actions pinned by commit, image base and supergateway pinned, Dependabot, provenance and SBOM, `SECURITY.md`, `server.json` for the MCP Registry; Origin / Host checks and 405 in HTTP mode, rate limit, toolsets, call log, titles and server instructions, files as embedded resources with a size cap, paging on every list tool, page content windows, compact JSON, `structuredContent`, secrets from files, clean shutdown
 - [x] v0.15.0 — Consistent tool names (breaking): `list_` for collections, `get_` for one item:
   - `xwiki_get_attachments` → `xwiki_list_attachments`
   - `xwiki_get_comments` → `xwiki_list_comments`
