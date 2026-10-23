@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'xwiki_get_class_property_values',
+    'xwiki_list_class_property_values',
     {
       description: `List the allowed values of a class property whose values come from elsewhere: a database list (DBList, DBTreeList) or a page, user or group picker. Each value has its label when it differs. filter narrows to values matching text (as the picker's search does). For a StaticList the values are in xwiki_get_class.`,
       inputSchema: {

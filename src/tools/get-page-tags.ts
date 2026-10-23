@@ -5,7 +5,7 @@ import { XWikiError } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'xwiki_get_tags',
+    'xwiki_get_page_tags',
     'Get all tags applied to a page.',
     {
       space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs")'),

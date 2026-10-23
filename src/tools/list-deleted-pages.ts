@@ -7,7 +7,7 @@ export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
     'xwiki_list_deleted_pages',
     {
-      description: `List pages in the wiki's recycle bin, newest first: each entry's recycle-bin id (for xwiki_restore_page), page reference, title, who deleted it and when, its batch id (pages deleted together share one), and whether it can be restored. name filters by part of the page reference (case-insensitive). Paged with start / limit.`,
+      description: `List pages in the wiki's recycle bin, newest first: each entry's recycle-bin id (for xwiki_restore_deleted_page), page reference, title, who deleted it and when, its batch id (pages deleted together share one), and whether it can be restored. name filters by part of the page reference (case-insensitive). Paged with start / limit.`,
       inputSchema: {
         name: z.string().optional().describe('Part of the page reference, e.g. "Guides" or "Docs.Guides.Setup"'),
         start: z.number().int().min(0).default(0).describe('Offset for pagination (default 0)'),

@@ -5,18 +5,25 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'xwiki_get_attachments',
+    'xwiki_list_comments',
     {
-      description: 'Get list of files attached to a wiki page.',
+      description:
+        'Get all comments on a wiki page. Returns comment IDs, authors, dates, text, and reply-to references. ' +
+        'Use the comment IDs with add_comment to post threaded replies.',
       inputSchema: {
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Space1.SubSpace"'),
-        page: z.string().describe('Page name'),
+        page: z.string().describe('Page name (e.g. "WebHome", "MyPage")'),
       },
     },
     async ({ space, page }) => {
       try {
-        const attachments = await client.getAttachments(space, page);
-        return { content: [{ type: 'text', text: JSON.stringify(attachments, null, 2) }] };
+        const comments = await client.getComments(space, page);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ comments, count: comments.length }, null, 2),
+          }],
+        };
       } catch (e) {
         const msg = e instanceof XWikiError && e.status === 404
           ? `Page not found: ${space}/${page}`

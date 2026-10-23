@@ -73,7 +73,7 @@ XWIKI_MCP_DISABLED_TOOLS # Comma-separated tools to leave unregistered (unknown 
 - **CSRF:** Writes need the `XWiki-Form-Token` header (cached from GET responses, refreshed on 403)
 - **Object properties:** Write them as a form body (`property#name=value`); XML property bodies are accepted but not saved
 - **Classes:** The list endpoint returns `clazzs`; property attributes (e.g. StaticList `values`) come as `[{name, value}]`
-- **Action URLs:** `render_page`, `export_page`, `rollback_page`, `move_page` (`?xpage=rename&step=2`), `copy_page` (`?xpage=copy`), `move_attachment` (`?xpage=attachment/move`), `restore_page` (`/bin/undelete/`), `list_deleted_pages` (`XWiki.DeletedDocumentsJSON`) and the class editing tools (`/bin/propupdate`, `/bin/propadd`, `/bin/propdisable`, `/bin/propenable`; fields `{property}_{attribute}` and `form_token`) use `/bin/…` action URLs, not REST
+- **Action URLs:** `render_page`, `export_page`, `rollback_page`, `move_page` (`?xpage=rename&step=2`), `copy_page` (`?xpage=copy`), `move_attachment` (`?xpage=attachment/move`), `restore_deleted_page` (`/bin/undelete/`), `list_deleted_pages` (`XWiki.DeletedDocumentsJSON`) and the class editing tools (`/bin/propupdate`, `/bin/propadd`, `/bin/propdisable`, `/bin/propenable`; fields `{property}_{attribute}` and `form_token`) use `/bin/…` action URLs, not REST
 
 Mocked tests cannot prove a write is saved. Verify write changes against a real XWiki before release.
 

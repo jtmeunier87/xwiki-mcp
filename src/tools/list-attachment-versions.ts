@@ -5,7 +5,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'xwiki_get_attachment_history',
+    'xwiki_list_attachment_versions',
     {
       description: `List the versions of one attachment, newest first, with size, media type, author, date and a download URL for each version.`,
       inputSchema: {

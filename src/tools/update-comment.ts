@@ -7,11 +7,11 @@ export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
     'xwiki_update_comment',
     {
-      description: `Edit the text of a comment. The comment id is the id from xwiki_get_comments. The comment's author and date stay as they were; the page gets a new version. Reads the comment back to confirm.`,
+      description: `Edit the text of a comment. The comment id is the id from xwiki_list_comments. The comment's author and date stay as they were; the page gets a new version. Reads the comment back to confirm.`,
       inputSchema: {
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Docs.Guides"'),
         page: z.string().describe('Page name (e.g. "WebHome")'),
-        id: z.number().int().min(0).describe('Comment id from xwiki_get_comments'),
+        id: z.number().int().min(0).describe('Comment id from xwiki_list_comments'),
         text: z.string().describe('New comment text'),
       },
     },

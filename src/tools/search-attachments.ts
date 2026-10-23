@@ -9,7 +9,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     {
       description: `Find attachments across the wiki, or within one space and its subspaces, without knowing which page holds them.
 
-Filters match part of the value: name (file name), page (page name), author (e.g. "JaneDoe"). types is a comma-separated list of media types or parts of them, e.g. "image" or "pdf,image/png". Returns each file's page, size, media type, author, date, version and download URL. Use xwiki_get_attachments for the files on one known page.`,
+Filters match part of the value: name (file name), page (page name), author (e.g. "JaneDoe"). types is a comma-separated list of media types or parts of them, e.g. "image" or "pdf,image/png". Returns each file's page, size, media type, author, date, version and download URL. Use xwiki_list_attachments for the files on one known page.`,
       inputSchema: {
         space: z.string().optional().describe('Limit to this space and its subspaces (dot notation, e.g. "Docs.Guides"). Omit for the whole wiki'),
         name: z.string().optional().describe('Part of the file name, e.g. "diagram" or ".png"'),

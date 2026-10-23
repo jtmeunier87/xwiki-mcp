@@ -538,7 +538,7 @@ export interface XWikiDeletedDocumentsResponse {
 }
 
 export interface DeletedPage {
-  /** Recycle-bin id, passed to xwiki_restore_page */
+  /** Recycle-bin id, passed to xwiki_restore_deleted_page */
   id: number;
   page: string;
   title?: string;

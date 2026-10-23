@@ -7,7 +7,7 @@ export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
     'xwiki_compare_page_versions',
     {
-      description: `Compare two versions of a page: a unified diff of the content (- removed, + added lines, with context), the number of lines added and removed, and any title or syntax change, with each version's author and date. Omit to_version to compare with the current version. Version numbers come from xwiki_get_page_history (e.g. "3.1").`,
+      description: `Compare two versions of a page: a unified diff of the content (- removed, + added lines, with context), the number of lines added and removed, and any title or syntax change, with each version's author and date. Omit to_version to compare with the current version. Version numbers come from xwiki_list_page_versions (e.g. "3.1").`,
       inputSchema: {
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Docs.Guides"'),
         page: z.string().describe('Page name (e.g. "WebHome")'),

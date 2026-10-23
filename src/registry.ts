@@ -8,7 +8,7 @@ export type Register = (server: McpServer, client: XWikiClient) => void;
 // Writes that only add (they never change or remove existing content).
 const ADDITIVE = new Set([
   'xwiki_add_comment', 'xwiki_add_tags', 'xwiki_create_object', 'xwiki_add_class_property',
-  'xwiki_copy_page', 'xwiki_restore_page',
+  'xwiki_copy_page', 'xwiki_restore_deleted_page',
 ]);
 
 // Writes that leave the wiki the same when repeated with the same arguments.

@@ -12,16 +12,16 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 | Category | Count | Tools |
 |---|---|---|
-| **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_get_page_tree`, `xwiki_find_pages`, `xwiki_get_required_rights` |
+| **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_list_page_children`, `xwiki_get_page_tree`, `xwiki_find_pages`, `xwiki_get_required_rights` |
 | **Pages (Write)** | 5 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_delete_page` |
-| **Recycle Bin** | 2 | `xwiki_list_deleted_pages`, `xwiki_restore_page` |
-| **Comments** | 4 | `xwiki_get_comments`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_delete_comment` |
-| **Attachments** | 7 | `xwiki_get_attachments`, `xwiki_search_attachments`, `xwiki_get_attachment_history`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_move_attachment`, `xwiki_delete_attachment` |
-| **Tags** | 5 | `xwiki_get_tags`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag` |
-| **Classes** | 6 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_get_class_property_values`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_set_class_property_enabled` |
-| **Objects** | 7 | `xwiki_list_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
-| **History** | 5 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_compare_page_versions`, `xwiki_rollback_page`, `xwiki_get_recent_changes` |
-| **Search & Query** | 2 | `xwiki_search`, `xwiki_advanced_search` |
+| **Recycle Bin** | 2 | `xwiki_list_deleted_pages`, `xwiki_restore_deleted_page` |
+| **Comments** | 4 | `xwiki_list_comments`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_delete_comment` |
+| **Attachments** | 7 | `xwiki_list_attachments`, `xwiki_search_attachments`, `xwiki_list_attachment_versions`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_move_attachment`, `xwiki_delete_attachment` |
+| **Tags** | 5 | `xwiki_get_page_tags`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_list_tags`, `xwiki_list_pages_by_tag` |
+| **Classes** | 6 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_list_class_property_values`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_set_class_property_enabled` |
+| **Objects** | 7 | `xwiki_list_page_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **History** | 5 | `xwiki_list_page_versions`, `xwiki_get_page_version`, `xwiki_compare_page_versions`, `xwiki_rollback_page`, `xwiki_list_recent_changes` |
+| **Search & Query** | 2 | `xwiki_search_pages`, `xwiki_query` |
 | **Render & Export** | 2 | `xwiki_render_page`, `xwiki_export_page` |
 
 ---
@@ -93,11 +93,13 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 | Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 52 |
 | Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 31 read tools |
 
-Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
+Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_deleted_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
 
 `XWIKI_MCP_DISABLED_TOOLS` removes further tools from whichever mode is set; it never adds any.
 
 Every tool carries MCP annotations, so clients can tell reads from writes: read tools are `readOnlyHint: true`; writes that only add (comments, tags, new objects, copy, restore) are `destructiveHint: false`; every other write and every delete is `destructiveHint: true`, with `idempotentHint` where repeating the call changes nothing more.
+
+> **Changed in 0.15.0:** 14 tools were renamed for consistency (see Roadmap); the old names are gone.
 
 > **Changed in 0.10.0:** delete tools are off unless `XWIKI_MCP_ALLOW_DELETE=true`.
 
@@ -116,7 +118,7 @@ List pages in a space with pagination (`start`, `limit`). Space names use dot no
 #### `xwiki_get_page`
 Get full page content, syntax, author, version, and parent link.
 
-#### `xwiki_get_page_children`
+#### `xwiki_list_page_children`
 Get immediate child pages of a given page.
 
 #### `xwiki_get_page_tree`
@@ -150,12 +152,12 @@ Permanently delete a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 #### `xwiki_list_deleted_pages`
 List the recycle bin, newest first: each entry's recycle-bin `id`, page, title, deleter, date, batch id and whether it can be restored. `name` filters by part of the page reference. xWiki has no REST endpoint for the recycle bin; this reads `XWiki.DeletedDocumentsJSON`, the service page behind the wiki's Deleted Documents view.
 
-#### `xwiki_restore_page`
+#### `xwiki_restore_deleted_page`
 Restore a page from the recycle bin by its `id` from `xwiki_list_deleted_pages`, using the `/bin/undelete/` action. Restores that one entry, not the rest of its batch. Refused if a page exists at that reference again. Needs the right to restore it (usually the deleter or an admin).
 
 ### Comments
 
-#### `xwiki_get_comments`
+#### `xwiki_list_comments`
 List all comments on a page.
 
 #### `xwiki_add_comment`
@@ -169,13 +171,13 @@ Permanently delete a comment; replies to it are kept. Only registered with `XWIK
 
 ### Attachments
 
-#### `xwiki_get_attachments`
+#### `xwiki_list_attachments`
 List attachments on a page with name, size, MIME type, and download URL.
 
 #### `xwiki_search_attachments`
 Find attachments across the wiki, or within one space and its subspaces. Filters match part of the value: `name`, `page`, `author`; `types` is a comma-separated list of media types or parts (`image`, `application/pdf`). Paged with `start` / `limit` (default 25).
 
-#### `xwiki_get_attachment_history`
+#### `xwiki_list_attachment_versions`
 List the versions of one attachment with size, media type, author, date and a download URL per version.
 
 #### `xwiki_upload_attachment`
@@ -192,7 +194,7 @@ Delete an attachment from a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=t
 
 ### Tags
 
-#### `xwiki_get_tags`
+#### `xwiki_get_page_tags`
 Get tags on a specific page.
 
 #### `xwiki_add_tags`
@@ -201,10 +203,10 @@ Add tags to a page (additive — preserves existing tags, no duplicates).
 #### `xwiki_remove_tags`
 Remove tags from a page, keeping the others. Returns the tags removed, any that were not on the page, and the remaining tags.
 
-#### `xwiki_get_all_wiki_tags`
-List every tag used anywhere in the wiki. Use this before `xwiki_get_pages_by_tag` to discover available tags.
+#### `xwiki_list_tags`
+List every tag used anywhere in the wiki. Use this before `xwiki_list_pages_by_tag` to discover available tags.
 
-#### `xwiki_get_pages_by_tag`
+#### `xwiki_list_pages_by_tag`
 Get all pages that have a specific tag (e.g. `howto`).
 
 ### Classes
@@ -215,7 +217,7 @@ List all XWiki classes defined in the wiki.
 #### `xwiki_get_class`
 Get a class definition: each property's name, type and non-empty attributes (`prettyName`, and for StaticList properties the allowed `values` and `multiSelect`). Use before `xwiki_create_object` to know which fields and values a class accepts.
 
-#### `xwiki_get_class_property_values`
+#### `xwiki_list_class_property_values`
 List the allowed values of a property whose values come from elsewhere (DBList, DBTreeList, page, user or group pickers), with labels; `filter` narrows them. StaticList values are in `xwiki_get_class`.
 
 #### `xwiki_update_class_properties`
@@ -229,7 +231,7 @@ Disable or enable a class property (`/bin/propdisable/`, `/bin/propenable/`). A 
 
 ### Objects
 
-#### `xwiki_list_objects`
+#### `xwiki_list_page_objects`
 List all XObjects on a page. Optionally filter by `class_name`.
 
 #### `xwiki_get_object`
@@ -252,7 +254,7 @@ Delete an object by class name and number. Only registered with `XWIKI_MCP_ALLOW
 
 ### History
 
-#### `xwiki_get_page_history`
+#### `xwiki_list_page_versions`
 List all revisions of a page — version string, timestamp, author, edit comment.
 
 #### `xwiki_get_page_version`
@@ -264,15 +266,15 @@ Compare two versions of a page (or one version with the current page): a unified
 #### `xwiki_rollback_page`
 Roll a page back to an earlier version (content and objects). xWiki saves the old version as a new version, so history is kept. Uses the `/bin/rollback/` action URL with the CSRF token.
 
-#### `xwiki_get_recent_changes`
+#### `xwiki_list_recent_changes`
 Get the most recent modifications across the entire wiki.
 
 ### Search & Query
 
-#### `xwiki_search`
+#### `xwiki_search_pages`
 Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
 
-#### `xwiki_advanced_search`
+#### `xwiki_query`
 Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`.
 
 ### Render & Export
@@ -295,7 +297,7 @@ Export a page as a file (base64). `format`: `pdf` (default, needs the PDF export
 - **Modifier prefix**: `xwiki:XWiki.` prefix stripped from all user references in display output.
 - **Render URL**: `xwiki_render_page` and `xwiki_export_page` use `/bin/get/` and `/bin/export/` action URLs, not the REST API.
 - **Errors**: every tool callback is wrapped (`src/registry.ts`) so an unexpected exception becomes an `isError` result instead of a failed request.
-- **Refactoring forms**: `xwiki_copy_page` (`?xpage=copy`), `xwiki_move_attachment` (`?xpage=attachment/move`, a background job the tool polls) and `xwiki_restore_page` (`/bin/undelete/`) post the wiki's own forms with `form_token`, like move. `xwiki_list_deleted_pages` reads `XWiki.DeletedDocumentsJSON`.
+- **Refactoring forms**: `xwiki_copy_page` (`?xpage=copy`), `xwiki_move_attachment` (`?xpage=attachment/move`, a background job the tool polls) and `xwiki_restore_deleted_page` (`/bin/undelete/`) post the wiki's own forms with `form_token`, like move. `xwiki_list_deleted_pages` reads `XWiki.DeletedDocumentsJSON`.
 - **Move**: `xwiki_move_page` posts the wiki's own rename form (`/bin/view/{page}?xpage=rename&step=2` with `form_token`), which runs the rename job and waits for it; the REST jobs API would need programming rights. The tool then reads the target back.
 - **`xwiki_get_object_property`**: Single-property endpoint returns the property at root level (not in a `properties` array) — confirmed against xWiki 18.x.
 - **`xwiki_find_pages`**: The wiki-wide pages endpoint can return duplicates — automatically deduplicated by `fullName`.
@@ -326,6 +328,21 @@ npm test        # 118 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.15.0 — Consistent tool names (breaking): `list_` for collections, `get_` for one item:
+  - `xwiki_get_attachments` → `xwiki_list_attachments`
+  - `xwiki_get_comments` → `xwiki_list_comments`
+  - `xwiki_get_page_children` → `xwiki_list_page_children`
+  - `xwiki_get_page_history` → `xwiki_list_page_versions`
+  - `xwiki_get_attachment_history` → `xwiki_list_attachment_versions`
+  - `xwiki_get_recent_changes` → `xwiki_list_recent_changes`
+  - `xwiki_get_class_property_values` → `xwiki_list_class_property_values`
+  - `xwiki_get_pages_by_tag` → `xwiki_list_pages_by_tag`
+  - `xwiki_get_tags` → `xwiki_get_page_tags`
+  - `xwiki_get_all_wiki_tags` → `xwiki_list_tags`
+  - `xwiki_search` → `xwiki_search_pages`
+  - `xwiki_advanced_search` → `xwiki_query`
+  - `xwiki_list_objects` → `xwiki_list_page_objects`
+  - `xwiki_restore_page` → `xwiki_restore_deleted_page`
 - [x] v0.14.1 — Dependencies current (zod 4, TypeScript 7, Vitest 5); Docker image on Node 24 LTS; Node 22+ required
 - [x] v0.14.0 — Tool annotations, `XWIKI_MCP_DISABLED_TOOLS`, `XWIKI_MCP_HTTP_TOKEN`, `XWIKI_MCP_HOST`, `XWIKI_TIMEOUT_MS`, images returned as images; copy page, recycle bin list/restore, property disable/enable and values, attachment move and history, version compare, comment edit/delete, XAR/HTML export
 - [x] v0.13.0 — `xwiki_list_class_objects`, `xwiki_remove_tags`, `xwiki_search_attachments`, `xwiki_move_page`, `xwiki_get_required_rights`

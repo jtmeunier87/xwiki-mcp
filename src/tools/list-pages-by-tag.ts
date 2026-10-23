@@ -4,7 +4,7 @@ import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.tool(
-    'xwiki_get_pages_by_tag',
+    'xwiki_list_pages_by_tag',
     'Get all pages that have a specific tag. Use get_all_wiki_tags first to see available tags. Useful for topic-based navigation (e.g. find all pages tagged "howto" or "release").',
     {
       tag: z.string().describe("The tag name to search for (e.g. 'howto', 'release')"),

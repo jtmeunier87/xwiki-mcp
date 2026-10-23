@@ -7,11 +7,11 @@ export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
     'xwiki_delete_comment',
     {
-      description: `Permanently delete a comment from a page. Replies to it are kept. The comment id is the id from xwiki_get_comments. Only registered with XWIKI_MCP_ALLOW_DELETE=true.`,
+      description: `Permanently delete a comment from a page. Replies to it are kept. The comment id is the id from xwiki_list_comments. Only registered with XWIKI_MCP_ALLOW_DELETE=true.`,
       inputSchema: {
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Docs.Guides"'),
         page: z.string().describe('Page name (e.g. "WebHome")'),
-        id: z.number().int().min(0).describe('Comment id from xwiki_get_comments'),
+        id: z.number().int().min(0).describe('Comment id from xwiki_list_comments'),
       },
     },
     async ({ space, page, id }) => {

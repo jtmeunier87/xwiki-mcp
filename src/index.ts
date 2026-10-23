@@ -13,9 +13,9 @@ import { registerTools, type Access, type Register } from './registry.js';
 import { register as registerListSpaces } from './tools/list-spaces.js';
 import { register as registerListPages } from './tools/list-pages.js';
 import { register as registerGetPage } from './tools/get-page.js';
-import { register as registerSearch } from './tools/search.js';
-import { register as registerGetAttachments } from './tools/get-attachments.js';
-import { register as registerGetPageChildren } from './tools/get-page-children.js';
+import { register as registerSearchPages } from './tools/search-pages.js';
+import { register as registerListAttachments } from './tools/list-attachments.js';
+import { register as registerListPageChildren } from './tools/list-page-children.js';
 import { register as registerGetPageTree } from './tools/get-page-tree.js';
 
 // Write tools (Phase 1)
@@ -23,7 +23,7 @@ import { register as registerCreatePage } from './tools/create-page.js';
 import { register as registerUpdatePage } from './tools/update-page.js';
 import { register as registerDeletePage } from './tools/delete-page.js';
 import { register as registerAddComment } from './tools/add-comment.js';
-import { register as registerGetComments } from './tools/get-comments.js';
+import { register as registerListComments } from './tools/list-comments.js';
 
 // Attachment tools (Phase 2)
 import { register as registerUploadAttachment } from './tools/upload-attachment.js';
@@ -31,7 +31,7 @@ import { register as registerDownloadAttachment } from './tools/download-attachm
 import { register as registerDeleteAttachment } from './tools/delete-attachment.js';
 
 // Tag tools (Phase 2)
-import { register as registerGetTags } from './tools/get-tags.js';
+import { register as registerGetPageTags } from './tools/get-page-tags.js';
 import { register as registerAddTags } from './tools/add-tags.js';
 
 // Class tools (Phase 3)
@@ -41,23 +41,23 @@ import { register as registerUpdateClassProperties } from './tools/update-class-
 import { register as registerAddClassProperty } from './tools/add-class-property.js';
 
 // Object tools (Phase 3)
-import { register as registerListObjects } from './tools/list-objects.js';
+import { register as registerListPageObjects } from './tools/list-page-objects.js';
 import { register as registerGetObject } from './tools/get-object.js';
 import { register as registerCreateObject } from './tools/create-object.js';
 import { register as registerUpdateObject } from './tools/update-object.js';
 import { register as registerDeleteObject } from './tools/delete-object.js';
 
 // Phase 4: History, Query, Render, Recent Changes
-import { register as registerGetPageHistory } from './tools/get-page-history.js';
+import { register as registerListPageVersions } from './tools/list-page-versions.js';
 import { register as registerGetPageVersion } from './tools/get-page-version.js';
 import { register as registerRollbackPage } from './tools/rollback-page.js';
-import { register as registerAdvancedSearch } from './tools/advanced-search.js';
+import { register as registerQuery } from './tools/query.js';
 import { register as registerRenderPage } from './tools/render-page.js';
-import { register as registerGetRecentChanges } from './tools/get-recent-changes.js';
+import { register as registerListRecentChanges } from './tools/list-recent-changes.js';
 
 // Phase 5: Wiki tags, page finder, export, object property
-import { register as registerGetAllWikiTags } from './tools/get-all-wiki-tags.js';
-import { register as registerGetPagesByTag } from './tools/get-pages-by-tag.js';
+import { register as registerListTags } from './tools/list-tags.js';
+import { register as registerListPagesByTag } from './tools/list-pages-by-tag.js';
 import { register as registerFindPages } from './tools/find-pages.js';
 import { register as registerExportPage } from './tools/export-page.js';
 import { register as registerGetObjectProperty } from './tools/get-object-property.js';
@@ -72,11 +72,11 @@ import { register as registerGetRequiredRights } from './tools/get-required-righ
 // v0.14: copy, recycle bin, property state, attachment move/history, values, compare, comments
 import { register as registerCopyPage } from './tools/copy-page.js';
 import { register as registerListDeletedPages } from './tools/list-deleted-pages.js';
-import { register as registerRestorePage } from './tools/restore-page.js';
+import { register as registerRestoreDeletedPage } from './tools/restore-deleted-page.js';
 import { register as registerSetClassPropertyEnabled } from './tools/set-class-property-enabled.js';
 import { register as registerMoveAttachment } from './tools/move-attachment.js';
-import { register as registerGetAttachmentHistory } from './tools/get-attachment-history.js';
-import { register as registerGetClassPropertyValues } from './tools/get-class-property-values.js';
+import { register as registerListAttachmentVersions } from './tools/list-attachment-versions.js';
+import { register as registerListClassPropertyValues } from './tools/list-class-property-values.js';
 import { register as registerComparePageVersions } from './tools/compare-page-versions.js';
 import { register as registerUpdateComment } from './tools/update-comment.js';
 import { register as registerDeleteComment } from './tools/delete-comment.js';
@@ -88,7 +88,7 @@ const TOOLS: Array<[Access, Register]> = [
   ['read', registerListSpaces],
   ['read', registerListPages],
   ['read', registerGetPage],
-  ['read', registerGetPageChildren],
+  ['read', registerListPageChildren],
   ['read', registerGetPageTree],
   ['read', registerFindPages],
   ['read', registerGetRequiredRights],
@@ -102,40 +102,40 @@ const TOOLS: Array<[Access, Register]> = [
 
   // Recycle bin
   ['read', registerListDeletedPages],
-  ['write', registerRestorePage],
+  ['write', registerRestoreDeletedPage],
 
   // Comments
-  ['read', registerGetComments],
+  ['read', registerListComments],
   ['write', registerAddComment],
   ['write', registerUpdateComment],
   ['delete', registerDeleteComment],
 
   // Attachments
-  ['read', registerGetAttachments],
+  ['read', registerListAttachments],
   ['read', registerSearchAttachments],
-  ['read', registerGetAttachmentHistory],
+  ['read', registerListAttachmentVersions],
   ['write', registerUploadAttachment],
   ['read', registerDownloadAttachment],
   ['write', registerMoveAttachment],
   ['delete', registerDeleteAttachment],
 
   // Tags
-  ['read', registerGetTags],
+  ['read', registerGetPageTags],
   ['write', registerAddTags],
   ['write', registerRemoveTags],
-  ['read', registerGetAllWikiTags],
-  ['read', registerGetPagesByTag],
+  ['read', registerListTags],
+  ['read', registerListPagesByTag],
 
   // Classes
   ['read', registerListClasses],
   ['read', registerGetClass],
-  ['read', registerGetClassPropertyValues],
+  ['read', registerListClassPropertyValues],
   ['write', registerUpdateClassProperties],
   ['write', registerAddClassProperty],
   ['write', registerSetClassPropertyEnabled],
 
   // Objects
-  ['read', registerListObjects],
+  ['read', registerListPageObjects],
   ['read', registerGetObject],
   ['read', registerGetObjectProperty],
   ['read', registerListClassObjects],
@@ -144,15 +144,15 @@ const TOOLS: Array<[Access, Register]> = [
   ['delete', registerDeleteObject],
 
   // History
-  ['read', registerGetPageHistory],
+  ['read', registerListPageVersions],
   ['read', registerGetPageVersion],
   ['read', registerComparePageVersions],
   ['write', registerRollbackPage],
-  ['read', registerGetRecentChanges],
+  ['read', registerListRecentChanges],
 
   // Search and query
-  ['read', registerSearch],
-  ['read', registerAdvancedSearch],
+  ['read', registerSearchPages],
+  ['read', registerQuery],
 
   // Render and export
   ['read', registerRenderPage],
