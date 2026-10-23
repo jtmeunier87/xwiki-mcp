@@ -3,9 +3,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from 'http';
+import { timingSafeEqual } from 'crypto';
 import { config } from './config.js';
 import { VERSION } from './version.js';
 import { XWikiClient } from './client.js';
+import { registerTools, type Access, type Register } from './registry.js';
 
 // Read tools (original)
 import { register as registerListSpaces } from './tools/list-spaces.js';
@@ -78,9 +80,6 @@ import { register as registerGetClassPropertyValues } from './tools/get-class-pr
 import { register as registerComparePageVersions } from './tools/compare-page-versions.js';
 import { register as registerUpdateComment } from './tools/update-comment.js';
 import { register as registerDeleteComment } from './tools/delete-comment.js';
-
-type Access = 'read' | 'write' | 'delete';
-type Register = (server: McpServer, client: XWikiClient) => void;
 
 // Every tool with the access it needs. XWIKI_MCP_READ_ONLY keeps only 'read';
 // 'delete' tools also need XWIKI_MCP_ALLOW_DELETE.
@@ -166,18 +165,36 @@ function allowed(access: Access): boolean {
   return access === 'write' || config.allowDelete;
 }
 
-const ENABLED_TOOLS = TOOLS.filter(([access]) => allowed(access));
+const MODE_TOOLS = TOOLS.filter(([access]) => allowed(access));
 const MODE = config.readOnly ? 'read-only' : config.allowDelete ? 'read/write/delete' : 'read/write, no delete';
+const DISABLED = new Set(config.disabledTools);
 
-async function buildServer(): Promise<McpServer> {
+function buildServer(seen?: Set<string>): { server: McpServer; tools: string[] } {
   const server = new McpServer({
     name: 'xwiki-mcp',
     version: VERSION,
   });
+  const tools = registerTools(server, new XWikiClient(), MODE_TOOLS, DISABLED, seen);
+  return { server, tools };
+}
 
-  const client = new XWikiClient();
-  for (const [, register] of ENABLED_TOOLS) register(server, client);
-  return server;
+// Build once at startup to count the tools and check XWIKI_MCP_DISABLED_TOOLS names.
+const allNames = new Set<string>();
+registerTools(new McpServer({ name: 'xwiki-mcp', version: VERSION }), new XWikiClient(), TOOLS, new Set(), allNames);
+const unknown = config.disabledTools.filter(t => !allNames.has(t));
+if (unknown.length > 0) {
+  process.stderr.write(`Fatal: XWIKI_MCP_DISABLED_TOOLS names unknown tools: ${unknown.join(', ')}\n`);
+  process.exit(1);
+}
+const ENABLED_COUNT = buildServer().tools.length;
+const SUMMARY = `Registered ${ENABLED_COUNT} of ${TOOLS.length} tools (${MODE}${DISABLED.size ? `, ${DISABLED.size} disabled` : ''})`;
+
+/** True when no token is configured, or the request carries "Authorization: Bearer <token>". */
+function authorized(header: string | undefined): boolean {
+  if (!config.httpToken) return true;
+  const given = Buffer.from(header?.startsWith('Bearer ') ? header.slice(7) : '');
+  const expected = Buffer.from(config.httpToken);
+  return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
 async function main() {
@@ -190,13 +207,18 @@ async function main() {
 
       if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', version: VERSION, tools: ENABLED_TOOLS.length, mode: MODE }));
+        res.end(JSON.stringify({ status: 'ok', version: VERSION, tools: ENABLED_COUNT, mode: MODE }));
         return;
       }
 
       if (url.pathname === '/mcp') {
+        if (!authorized(req.headers.authorization)) {
+          res.writeHead(401, { 'Content-Type': 'text/plain', 'WWW-Authenticate': 'Bearer' });
+          res.end('Unauthorized');
+          return;
+        }
         // One transport + server instance per request (stateless)
-        const server = await buildServer();
+        const { server } = buildServer();
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined, // stateless
         });
@@ -209,21 +231,21 @@ async function main() {
       res.end('Not found. Available endpoints: POST /mcp, GET /health');
     });
 
-    httpServer.listen(httpPort, () => {
-      process.stderr.write(`xwiki-mcp v${VERSION} started in Streamable HTTP mode on port ${httpPort}\n`);
+    httpServer.listen(httpPort, config.httpHost || undefined, () => {
+      process.stderr.write(`xwiki-mcp v${VERSION} started in Streamable HTTP mode on ${config.httpHost || 'all interfaces'}, port ${httpPort}${config.httpToken ? ' (bearer token required)' : ''}\n`);
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
-      process.stderr.write(`Registered ${ENABLED_TOOLS.length} of ${TOOLS.length} tools (${MODE})\n`);
+      process.stderr.write(`${SUMMARY}\n`);
       process.stderr.write(`MCP endpoint: http://localhost:${httpPort}/mcp\n`);
     });
 
   } else {
     // Default stdio transport mode
-    const server = await buildServer();
+    const { server } = buildServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
     process.stderr.write(`xwiki-mcp v${VERSION} started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
-    process.stderr.write(`Registered ${ENABLED_TOOLS.length} of ${TOOLS.length} tools (${MODE})\n`);
+    process.stderr.write(`${SUMMARY}\n`);
   }
 }
 

@@ -42,7 +42,7 @@ export class XWikiClient {
 
     const response = await fetch(url.toString(), {
       headers: { Accept: 'application/json', ...this.authHeaders() },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(config.timeoutMs),
     });
 
     const token = response.headers.get('XWiki-Form-Token');
@@ -65,7 +65,7 @@ export class XWikiClient {
     try {
       response = await fetch(urlStr, {
         headers: { Accept: 'application/json', ...this.authHeaders() },
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -111,7 +111,7 @@ export class XWikiClient {
         method,
         headers,
         body: body as BodyInit ?? undefined,
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(config.timeoutMs * 4),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -128,7 +128,7 @@ export class XWikiClient {
             method,
             headers,
             body: body as BodyInit ?? undefined,
-            signal: AbortSignal.timeout(60_000),
+            signal: AbortSignal.timeout(config.timeoutMs * 4),
           });
         } catch {
           throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -455,7 +455,7 @@ export class XWikiClient {
     try {
       response = await fetch(downloadUrl, {
         headers: { ...this.authHeaders() },
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(config.timeoutMs * 4),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}.`);
@@ -650,7 +650,7 @@ export class XWikiClient {
         headers: { ...this.authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form.toString(),
         redirect: 'manual',
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -956,7 +956,7 @@ export class XWikiClient {
         method: 'POST',
         headers: { ...this.authHeaders() },
         redirect: 'manual',
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -1015,7 +1015,7 @@ export class XWikiClient {
   async renderPage(space: string, page: string, syntax: 'plain' | 'html' = 'plain'): Promise<RenderResult> {
     const outputSyntax = syntax === 'html' ? 'annotatedhtmlmacros' : 'plain';
     // Action URLs use the original (non-REST) path pattern
-    const actionUrl = `${config.baseUrl}/bin/get/${encodeURIComponent(space)}/${encodeURIComponent(page)}`;
+    const actionUrl = `${config.baseUrl}/bin/get/${this.actionPath(space, page)}`;
     const url = new URL(actionUrl);
     url.searchParams.set('outputSyntax', outputSyntax);
     if (syntax === 'plain') {
@@ -1024,7 +1024,7 @@ export class XWikiClient {
 
     const response = await fetch(url.toString(), {
       headers: { Accept: 'text/plain, text/html', ...this.authHeaders() },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(config.timeoutMs),
     });
     if (!response.ok) throw new XWikiError(`renderPage failed: ${response.statusText}`, response.status);
 
@@ -1114,7 +1114,7 @@ export class XWikiClient {
   async exportPage(space: string, page: string, format: 'pdf' | 'xar' | 'html' = 'pdf', options: { children?: boolean; history?: boolean } = {}): Promise<ExportResult> {
     const url = new URL(`${config.baseUrl}/bin/export/${this.actionPath(space, page)}`);
     url.searchParams.set('format', format);
-    let init: RequestInit = { headers: { ...this.authHeaders() }, signal: AbortSignal.timeout(120_000) };
+    let init: RequestInit = { headers: { ...this.authHeaders() }, signal: AbortSignal.timeout(config.timeoutMs * 4) };
 
     if (format !== 'pdf') {
       // XAR and HTML exports must be POSTed; pages selects what goes in (% matches any characters).
@@ -1321,7 +1321,7 @@ export class XWikiClient {
     });
     if (options.newTitle) form.set('newPageTitle', options.newTitle);
 
-    const response = await this.postPageAction('view', space, page, form, 120_000,
+    const response = await this.postPageAction('view', space, page, form, config.timeoutMs * 4,
       'Moving a page needs delete right on it and edit right on the target.');
     if (response.status === 409) throw new XWikiError(`Target page already exists: ${to}`, 409);
     // Success redirects to the rename status page (renameId); anything else means the
@@ -1425,7 +1425,7 @@ export class XWikiClient {
     });
     if (options.newTitle) form.set('targetPageTitle', options.newTitle);
 
-    const response = await this.postPageAction('view', space, page, form, 120_000,
+    const response = await this.postPageAction('view', space, page, form, config.timeoutMs * 4,
       'Copying a page needs view right on it and edit right on the target.');
     this.expectRedirect(response, 'copyId', 'Copy');
 
@@ -1479,7 +1479,7 @@ export class XWikiClient {
     const ref = `${space}.${page}`;
     await this.expectMissing(space, page, ref, 'A page exists at that reference again; move or rename it first');
     const form = new URLSearchParams({ id: String(id), form_token: await this.getCsrfToken() });
-    const response = await this.postPageAction('undelete', space, page, form, 60_000,
+    const response = await this.postPageAction('undelete', space, page, form, config.timeoutMs * 4,
       'Restoring a page needs the right to undelete it (usually its deleter or an admin).');
     if (!(response.status >= 300 && response.status < 400)) {
       this.csrfToken = null;
@@ -1548,7 +1548,7 @@ export class XWikiClient {
       autoRedirect: String(autoRedirect),
       form_token: await this.getCsrfToken(),
     });
-    const response = await this.postPageAction('view', space, page, form, 60_000,
+    const response = await this.postPageAction('view', space, page, form, config.timeoutMs * 4,
       'Moving an attachment needs edit right on both pages.');
     if (response.status === 409) throw new XWikiError(`Target attachment already exists: ${to}`, 409);
     const moveId = this.expectRedirect(response, 'moveId', 'Attachment move');
@@ -1728,7 +1728,7 @@ export class XWikiClient {
     try {
       response = await fetch(url, {
         headers: { Accept: 'application/json', ...this.authHeaders() },
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);

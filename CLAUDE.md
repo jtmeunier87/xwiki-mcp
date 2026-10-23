@@ -23,16 +23,19 @@ Without `XWIKI_MCP_PORT` the server speaks MCP over stdio. With it, it serves st
 
 ```
 src/
-├── index.ts          # Entry point: tool list with access levels, transports
+├── index.ts          # Entry point: tool list with access levels, transports, HTTP token check
+├── registry.ts       # Registers tools: annotations from access level, disabled tools, error guard
+├── diff.ts           # Line diff for xwiki_compare_page_versions
 ├── config.ts         # Env var parsing/validation
 ├── version.ts        # Single source of the server version (keep in step with package.json)
 ├── client.ts         # XWiki REST/action-URL HTTP client (auth, CSRF token, mapping)
 ├── client.test.ts    # Unit tests for the client
+├── registry.test.ts  # Unit tests for registration
 ├── types.ts          # Raw XWiki shapes and compact tool output shapes
 └── tools/            # One file per tool, each exports register(server, client)
 ```
 
-To add a tool: create `src/tools/<name>.ts`, add the client method and types, add it to `TOOLS` in `index.ts` with its access level (`read`, `write` or `delete`), add a test, and update README.md.
+To add a tool: create `src/tools/<name>.ts`, add the client method and types, add it to `TOOLS` in `index.ts` with its access level (`read`, `write` or `delete`; annotations follow from it, and a write that only adds or is idempotent goes in `ADDITIVE` / `IDEMPOTENT` in `registry.ts`), add a test, and update README.md.
 
 ## Configuration (Environment Variables)
 
@@ -45,16 +48,21 @@ XWIKI_TOKEN             # For token auth (Bearer)
 XWIKI_WIKI_NAME         # Wiki name (default: xwiki)
 XWIKI_REST_PATH         # REST path (default: /rest)
 XWIKI_PAGE_LIMIT        # Default page size (default: 50)
+XWIKI_TIMEOUT_MS        # Per-request timeout (default: 30000; long operations get 4x)
 XWIKI_MCP_PORT          # Set to serve Streamable HTTP instead of stdio
+XWIKI_MCP_HOST          # HTTP mode: interface to listen on (default: all)
+XWIKI_MCP_HTTP_TOKEN    # HTTP mode: bearer token required on POST /mcp (default: none)
 XWIKI_MCP_READ_ONLY     # true: register read tools only (default: false)
 XWIKI_MCP_ALLOW_DELETE  # true: also register delete tools (default: false)
+XWIKI_MCP_DISABLED_TOOLS # Comma-separated tools to leave unregistered (unknown names fail at startup)
 ```
 
 ## Access modes and security
 
 - Tools a mode excludes are not registered at all. `XWIKI_MCP_READ_ONLY` overrides `XWIKI_MCP_ALLOW_DELETE`.
 - Delete tools (`xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`, `xwiki_delete_comment`) are off by default.
-- The HTTP mode has no authentication of its own. It must sit behind an authenticating proxy or on a private network; document this wherever HTTP deployment is described.
+- `XWIKI_MCP_DISABLED_TOOLS` only removes tools from the mode's set.
+- The HTTP mode's only authentication is the optional `XWIKI_MCP_HTTP_TOKEN`. It must still sit behind an authenticating proxy or on a private network; document this wherever HTTP deployment is described.
 
 ## XWiki REST API Specifics
 
@@ -84,7 +92,7 @@ Mocked tests cannot prove a write is saved. Verify write changes against a real 
 | 500 | `"XWiki server error: {status}. URL: {url}"` |
 | Network | `"Cannot connect to XWiki at {baseUrl}. Check XWIKI_BASE_URL."` |
 
-Tool errors must be returned as `isError` results, never crash the MCP server process. Invalid configuration fails at startup.
+Tool errors must be returned as `isError` results, never crash the MCP server process (`registry.ts` turns any thrown error into one; tools still map 404s to their own messages). Invalid configuration fails at startup.
 
 ## References
 

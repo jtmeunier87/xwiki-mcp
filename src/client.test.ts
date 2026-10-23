@@ -12,6 +12,7 @@ vi.mock('./config.js', () => ({
     wikiName: 'xwiki',
     restPath: '/rest',
     pageLimit: 50,
+    timeoutMs: 30000,
   },
 }));
 
@@ -800,6 +801,13 @@ describe('renderPage', () => {
     expect(result.page).toBe('WebHome');
     expect(result.syntax).toBe('plain');
     expect(result.content).toBe('This is the rendered plain text content of the page.');
+  });
+
+  it('builds the action URL from nested spaces', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: () => Promise.resolve(''), headers: { get: () => null } });
+    vi.stubGlobal('fetch', fetch);
+    await new XWikiClient().renderPage('Docs.Guides', 'Setup', 'plain');
+    expect(fetch.mock.calls[0][0]).toContain('/bin/get/Docs/Guides/Setup?');
   });
 
   it('uses the action URL (not REST path) for plain text', async () => {

@@ -9,6 +9,14 @@ export interface Config {
   pageLimit: number;
   readOnly: boolean;
   allowDelete: boolean;
+  /** Tools to leave unregistered (XWIKI_MCP_DISABLED_TOOLS) */
+  disabledTools: string[];
+  /** Bearer token required on POST /mcp in HTTP mode; empty = none */
+  httpToken: string;
+  /** Interface the HTTP server listens on; empty = all */
+  httpHost: string;
+  /** Timeout for one XWiki request, ms; long operations (writes, exports, refactoring jobs) get 4x */
+  timeoutMs: number;
 }
 
 function parseFlag(name: string, fallback: boolean): boolean {
@@ -35,6 +43,13 @@ function load(): Config {
     throw new Error(`XWIKI_PAGE_LIMIT must be a positive integer, got: ${process.env.XWIKI_PAGE_LIMIT}`);
   }
 
+  const timeoutMs = parseInt(process.env.XWIKI_TIMEOUT_MS ?? '30000', 10);
+  if (isNaN(timeoutMs) || timeoutMs < 1000) {
+    throw new Error(`XWIKI_TIMEOUT_MS must be an integer of at least 1000, got: ${process.env.XWIKI_TIMEOUT_MS}`);
+  }
+
+  const disabledTools = (process.env.XWIKI_MCP_DISABLED_TOOLS ?? '').split(',').map(t => t.trim()).filter(Boolean);
+
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
     authType: rawAuthType as Config['authType'],
@@ -46,6 +61,10 @@ function load(): Config {
     pageLimit,
     readOnly: parseFlag('XWIKI_MCP_READ_ONLY', false),
     allowDelete: parseFlag('XWIKI_MCP_ALLOW_DELETE', false),
+    disabledTools,
+    httpToken: process.env.XWIKI_MCP_HTTP_TOKEN ?? '',
+    httpHost: process.env.XWIKI_MCP_HOST ?? '',
+    timeoutMs,
   };
 }
 

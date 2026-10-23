@@ -61,23 +61,27 @@ node dist/index.js
 
 Endpoints: `POST /mcp` (MCP), `GET /health` (version, enabled tool count, access mode).
 
-**The HTTP mode has no authentication of its own.** Anyone who can reach the port can use every enabled tool with the configured xWiki account. Bind it to localhost or a private network, or put it behind an authenticating proxy (an access gateway, a reverse proxy with auth, or similar). Use the access-mode flags below to limit what a reachable server can do.
+**Protect the HTTP mode.** Without `XWIKI_MCP_HTTP_TOKEN`, anyone who can reach the port can use every enabled tool with the configured xWiki account. Put it behind an authenticating proxy (an access gateway, a reverse proxy with auth, or similar) or on a private network, and use `XWIKI_MCP_HOST=127.0.0.1` when only local clients need it. `XWIKI_MCP_HTTP_TOKEN` adds a shared bearer token that `POST /mcp` requires (`Authorization: Bearer <token>`; `GET /health` stays open); treat it as a second lock, not a replacement for the proxy. Use the access-mode settings below to limit what a reachable server can do.
 
 ### Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `XWIKI_BASE_URL` | Yes | — | Base URL (e.g. `https://wiki.example.com`) |
-| `XWIKI_AUTH_TYPE` | No | `basic` | `basic` or `token` |
+| `XWIKI_AUTH_TYPE` | No | `basic` | `basic`, `token` or `none` |
 | `XWIKI_USERNAME` | If basic | — | xWiki username |
 | `XWIKI_PASSWORD` | If basic | — | xWiki password |
 | `XWIKI_TOKEN` | If token | — | Bearer token (requires xWiki 15.4+) |
 | `XWIKI_WIKI_NAME` | No | `xwiki` | Wiki name |
 | `XWIKI_REST_PATH` | No | `/rest` | REST path |
 | `XWIKI_PAGE_LIMIT` | No | `50` | Default page size |
+| `XWIKI_TIMEOUT_MS` | No | `30000` | Timeout for one xWiki request; writes, downloads, exports and refactoring jobs get 4× this |
 | `XWIKI_MCP_PORT` | No | — | Set to enable Streamable HTTP mode |
+| `XWIKI_MCP_HOST` | No | all interfaces | HTTP mode: interface to listen on, e.g. `127.0.0.1` |
+| `XWIKI_MCP_HTTP_TOKEN` | No | — | HTTP mode: bearer token required on `POST /mcp` |
 | `XWIKI_MCP_READ_ONLY` | No | `false` | `true` registers only read tools |
 | `XWIKI_MCP_ALLOW_DELETE` | No | `false` | `true` also registers the delete tools |
+| `XWIKI_MCP_DISABLED_TOOLS` | No | — | Comma-separated tool names to leave unregistered, e.g. `xwiki_move_page,xwiki_update_class_properties`. An unknown name stops the server at startup |
 
 ### Access modes
 
@@ -90,6 +94,10 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 | Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 31 read tools |
 
 Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
+
+`XWIKI_MCP_DISABLED_TOOLS` removes further tools from whichever mode is set; it never adds any.
+
+Every tool carries MCP annotations, so clients can tell reads from writes: read tools are `readOnlyHint: true`; writes that only add (comments, tags, new objects, copy, restore) are `destructiveHint: false`; every other write and every delete is `destructiveHint: true`, with `idempotentHint` where repeating the call changes nothing more.
 
 > **Changed in 0.10.0:** delete tools are off unless `XWIKI_MCP_ALLOW_DELETE=true`.
 
@@ -174,7 +182,7 @@ List the versions of one attachment with size, media type, author, date and a do
 Upload a file (base64-encoded) to a page.
 
 #### `xwiki_download_attachment`
-Download a file — returns base64 content, MIME type, and size.
+Download an attachment. PNG, JPEG, GIF and WebP images up to 5 MB come back as MCP image content (the model can see them) plus a text block with name, type and size; other files as base64 text.
 
 #### `xwiki_move_attachment`
 Move or rename an attachment, on the same page or to another page, using the attachment Move form (`?xpage=attachment/move`). It starts a background job; the tool polls it until it finishes and reads the target back. `update_references` (default true) rewrites links and images to it; `auto_redirect` (default false) leaves a redirect. Needs edit right on both pages.
@@ -286,6 +294,7 @@ Export a page as a file (base64). `format`: `pdf` (default, needs the PDF export
 - **History timestamps**: History endpoints return Unix milliseconds — automatically converted to ISO strings.
 - **Modifier prefix**: `xwiki:XWiki.` prefix stripped from all user references in display output.
 - **Render URL**: `xwiki_render_page` and `xwiki_export_page` use `/bin/get/` and `/bin/export/` action URLs, not the REST API.
+- **Errors**: every tool callback is wrapped (`src/registry.ts`) so an unexpected exception becomes an `isError` result instead of a failed request.
 - **Refactoring forms**: `xwiki_copy_page` (`?xpage=copy`), `xwiki_move_attachment` (`?xpage=attachment/move`, a background job the tool polls) and `xwiki_restore_page` (`/bin/undelete/`) post the wiki's own forms with `form_token`, like move. `xwiki_list_deleted_pages` reads `XWiki.DeletedDocumentsJSON`.
 - **Move**: `xwiki_move_page` posts the wiki's own rename form (`/bin/view/{page}?xpage=rename&step=2` with `form_token`), which runs the rename job and waits for it; the REST jobs API would need programming rights. The tool then reads the target back.
 - **`xwiki_get_object_property`**: Single-property endpoint returns the property at root level (not in a `properties` array) — confirmed against xWiki 18.x.
@@ -300,7 +309,7 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test        # 113 unit tests (mocked fetch)
+npm test        # 118 unit tests (mocked fetch)
 ```
 
 ---
@@ -317,7 +326,7 @@ npm test        # 113 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
-- [x] v0.14.0 — Copy page, recycle bin list/restore, property disable/enable and values, attachment move and history, version compare, comment edit/delete, XAR/HTML export
+- [x] v0.14.0 — Tool annotations, `XWIKI_MCP_DISABLED_TOOLS`, `XWIKI_MCP_HTTP_TOKEN`, `XWIKI_MCP_HOST`, `XWIKI_TIMEOUT_MS`, images returned as images; copy page, recycle bin list/restore, property disable/enable and values, attachment move and history, version compare, comment edit/delete, XAR/HTML export
 - [x] v0.13.0 — `xwiki_list_class_objects`, `xwiki_remove_tags`, `xwiki_search_attachments`, `xwiki_move_page`, `xwiki_get_required_rights`
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)
 
