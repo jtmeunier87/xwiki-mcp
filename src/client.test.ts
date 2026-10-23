@@ -1244,3 +1244,88 @@ describe('rollbackPage', () => {
     await expect(new XWikiClient().rollbackPage('Main', 'WebHome', '9.9')).rejects.toThrow('Version 9.9 not found');
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateClassProperties / addClassProperty
+// ---------------------------------------------------------------------------
+
+describe('class editing', () => {
+  const reply = (body: unknown, status = 200) => ({
+    ok: status >= 200 && status < 300, status, statusText: String(status),
+    json: () => Promise.resolve(body),
+    headers: { get: (k: string) => (k === 'XWiki-Form-Token' ? 'test-csrf-token' : null) },
+  });
+  const cls = (props: Array<[string, string, Record<string, string>]>) => ({
+    id: 'xwiki:Sandbox.Code.ExampleClass',
+    name: 'Sandbox.Code.ExampleClass',
+    properties: props.map(([name, type, attrs]) => ({
+      name, type, attributes: Object.entries(attrs).map(([n, v]) => ({ name: n, value: v })),
+    })),
+  });
+
+  it('POSTs propupdate with {property}_{attribute} fields and form_token, then confirms by reading back', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(reply(cls([['status', 'StaticList', { hint: 'Old hint' }]])))
+      .mockResolvedValueOnce(reply({}, 302))
+      .mockResolvedValueOnce(reply(cls([['status', 'StaticList', { hint: 'Current state' }]])));
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().updateClassProperties('Sandbox.Code.ExampleClass', { status: { hint: 'Current state' } });
+
+    const [url, opts] = fetch.mock.calls[1];
+    expect(new URL(url).pathname).toBe('/bin/propupdate/Sandbox/Code/ExampleClass');
+    expect(opts.method).toBe('POST');
+    const form = new URLSearchParams(opts.body);
+    expect(form.get('status_hint')).toBe('Current state');
+    expect(form.get('form_token')).toBe('test-csrf-token');
+    expect(result).toEqual({
+      class_name: 'Sandbox.Code.ExampleClass',
+      changes: [{ property: 'status', attribute: 'hint', value: 'Current state' }],
+      status: 'updated',
+    });
+  });
+
+  it('reports an error when the read-back does not show the change', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(reply(cls([['status', 'StaticList', {}]])))
+      .mockResolvedValueOnce(reply({}, 302))
+      .mockResolvedValueOnce(reply(cls([['status', 'StaticList', {}]]))));
+    await expect(new XWikiClient().updateClassProperties('Sandbox.Code.ExampleClass', { status: { hint: 'x' } }))
+      .rejects.toThrow('not changed as asked: status.hint');
+  });
+
+  it('refuses unknown properties and renames without posting', async () => {
+    const fetch = vi.fn().mockResolvedValue(reply(cls([['status', 'StaticList', {}]])));
+    vi.stubGlobal('fetch', fetch);
+    const client = new XWikiClient();
+    await expect(client.updateClassProperties('Sandbox.Code.ExampleClass', { missing: { hint: 'x' } })).rejects.toThrow('Property not found');
+    await expect(client.updateClassProperties('Sandbox.Code.ExampleClass', { status: { name: 'state' } })).rejects.toThrow('Renaming');
+    expect(fetch.mock.calls.every(([, o]) => !o || o.method !== 'POST')).toBe(true);
+  });
+
+  it('POSTs propadd with propname and proptype, then sets attributes', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(reply(cls([])))                                           // exists check
+      .mockResolvedValueOnce(reply({}, 302))                                           // propadd
+      .mockResolvedValueOnce(reply(cls([['dueDate', 'Date', {}]])))                    // confirm added
+      .mockResolvedValueOnce(reply(cls([['dueDate', 'Date', {}]])))                    // update: before
+      .mockResolvedValueOnce(reply({}, 302))                                           // propupdate
+      .mockResolvedValueOnce(reply(cls([['dueDate', 'Date', { hint: 'Due' }]])));      // update: after
+    vi.stubGlobal('fetch', fetch);
+
+    const result = await new XWikiClient().addClassProperty('Sandbox.Code.ExampleClass', 'dueDate', 'Date', { hint: 'Due' });
+
+    const [url, opts] = fetch.mock.calls[1];
+    expect(new URL(url).pathname).toBe('/bin/propadd/Sandbox/Code/ExampleClass');
+    const form = new URLSearchParams(opts.body);
+    expect(form.get('propname')).toBe('dueDate');
+    expect(form.get('proptype')).toBe('Date');
+    expect(new URL(fetch.mock.calls[4][0]).pathname).toBe('/bin/propupdate/Sandbox/Code/ExampleClass');
+    expect(result).toEqual({ class_name: 'Sandbox.Code.ExampleClass', property: 'dueDate', type: 'Date', attributes: { hint: 'Due' }, status: 'added' });
+  });
+
+  it('refuses to add a property that already exists', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(cls([['dueDate', 'Date', {}]]))));
+    await expect(new XWikiClient().addClassProperty('Sandbox.Code.ExampleClass', 'dueDate', 'Date')).rejects.toThrow('already exists');
+  });
+});

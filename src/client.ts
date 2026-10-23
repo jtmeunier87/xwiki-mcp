@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult } from './types.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -564,6 +564,103 @@ export class XWikiClient {
         return { name: p.name, type: p.type, attributes };
       }),
     };
+  }
+
+  /**
+   * Change attributes of existing class properties (hint, prettyName, values, …).
+   * No REST endpoint edits classes; this posts the class editor's action:
+   * POST /bin/propupdate/{class space path}/{class page} with `{property}_{attribute}=value`.
+   * xWiki rebuilds the class from the stored one and changes only the fields sent.
+   * Renaming (`name`) is refused: it rewrites every object of the class.
+   */
+  async updateClassProperties(
+    className: string,
+    updates: Record<string, Record<string, string>>,
+  ): Promise<ClassUpdateResult> {
+    const before = await this.getClass(className);
+    const form = new URLSearchParams();
+    const changes: ClassUpdateResult['changes'] = [];
+    for (const [property, attributes] of Object.entries(updates)) {
+      if (!before.properties.some(p => p.name === property)) {
+        throw new XWikiError(`Property not found in ${className}: ${property}`, 404);
+      }
+      for (const [attribute, value] of Object.entries(attributes)) {
+        if (attribute === 'name') {
+          throw new XWikiError('Renaming a property is not supported: it rewrites every object of the class.', 400);
+        }
+        form.set(`${property}_${attribute}`, value);
+        changes.push({ property, attribute, value });
+      }
+    }
+    if (changes.length === 0) throw new XWikiError('No attributes to update.', 400);
+
+    await this.postClassAction('propupdate', className, form);
+
+    const after = await this.getClass(className);
+    const unchanged = changes.filter(c =>
+      (after.properties.find(p => p.name === c.property)?.attributes?.[c.attribute] ?? '') !== c.value);
+    if (unchanged.length > 0) {
+      throw new XWikiError(
+        `Class ${className} was not changed as asked: ${unchanged.map(c => `${c.property}.${c.attribute}`).join(', ')}. Check the attribute names with xwiki_get_class.`,
+      );
+    }
+    return { class_name: className, changes, status: 'updated' };
+  }
+
+  /**
+   * Add a property to a class, then set its attributes if given.
+   * Uses the class editor's action: POST /bin/propadd/{class space path}/{class page}
+   * with propname and proptype (the type name xwiki_get_class shows, e.g. String, TextArea, StaticList).
+   */
+  async addClassProperty(
+    className: string,
+    property: string,
+    type: string,
+    attributes: Record<string, string> = {},
+  ): Promise<ClassAddResult> {
+    const before = await this.getClass(className);
+    if (before.properties.some(p => p.name === property)) {
+      throw new XWikiError(`Property already exists in ${className}: ${property}`, 400);
+    }
+    await this.postClassAction('propadd', className, new URLSearchParams({ propname: property, proptype: type }));
+
+    const added = (await this.getClass(className)).properties.find(p => p.name === property);
+    if (!added) {
+      throw new XWikiError(`Property ${property} was not added to ${className}. Check the name (letters, digits, no spaces) and the type.`);
+    }
+    if (Object.keys(attributes).length > 0) {
+      await this.updateClassProperties(className, { [property]: attributes });
+    }
+    return { class_name: className, property, type: added.type ?? type, attributes, status: 'added' };
+  }
+
+  /** POST a class editor action URL with the CSRF token as form_token. */
+  private async postClassAction(action: 'propupdate' | 'propadd', className: string, form: URLSearchParams): Promise<void> {
+    const parts = className.split('.');
+    if (parts.length < 2) throw new XWikiError(`Not a full class name: ${className}`, 400);
+    const actionPath = parts.map(encodeURIComponent).join('/');
+    const url = `${config.baseUrl}/bin/${action}/${actionPath}`;
+    form.set('form_token', await this.getCsrfToken());
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { ...this.authHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    }
+    // Success is a redirect; the caller confirms the change by reading the class back.
+    if (response.status === 401 || response.status === 403) {
+      throw new XWikiError('Authentication or permission error. Editing a class needs edit rights on its page.', response.status);
+    }
+    if (response.status >= 400) {
+      throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
+    }
   }
 
   // ---------------------------------------------------------------------------

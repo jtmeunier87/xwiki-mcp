@@ -387,6 +387,20 @@ export interface ExportResult {
   size_bytes: number;
 }
 
+export interface ClassUpdateResult {
+  class_name: string;
+  changes: Array<{ property: string; attribute: string; value: string }>;
+  status: 'updated';
+}
+
+export interface ClassAddResult {
+  class_name: string;
+  property: string;
+  type: string;
+  attributes: Record<string, string>;
+  status: 'added';
+}
+
 export interface RollbackResult {
   space: string;
   page: string;
