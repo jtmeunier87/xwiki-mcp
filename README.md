@@ -8,7 +8,7 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 34 tools across 7 categories
+## 36 tools across 7 categories
 
 | Category | Count | Tools |
 |---|---|---|
@@ -16,7 +16,7 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 | **Pages (Write) & Comments** | 5 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_delete_page`, `xwiki_add_comment`, `xwiki_get_comments` |
 | **Attachments** | 4 | `xwiki_get_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
 | **Tags** | 2 | `xwiki_get_tags`, `xwiki_add_tags` |
-| **Classes & Objects** | 7 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **Classes & Objects** | 9 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
 | **History & Query** | 6 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_rollback_page`, `xwiki_advanced_search`, `xwiki_render_page`, `xwiki_get_recent_changes` |
 | **Wiki-Level** | 5 | `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag`, `xwiki_find_pages`, `xwiki_export_page`, `xwiki_get_object_property` |
 
@@ -81,11 +81,11 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 
 | Mode | Settings | Tools |
 |---|---|---|
-| Read/write, no delete (default) | — | 31: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
-| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 34 |
+| Read/write, no delete (default) | — | 33: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
+| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 36 |
 | Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 23 read tools |
 
-Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_add_comment`, `xwiki_upload_attachment`, `xwiki_add_tags`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_rollback_page`.
+Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_add_comment`, `xwiki_upload_attachment`, `xwiki_add_tags`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
 
 > **Changed in 0.10.0:** delete tools are off unless `XWIKI_MCP_ALLOW_DELETE=true`.
 
@@ -156,6 +156,12 @@ List all XWiki classes defined in the wiki.
 
 #### `xwiki_get_class`
 Get a class definition: each property's name, type and non-empty attributes (`prettyName`, and for StaticList properties the allowed `values` and `multiSelect`). Use before `xwiki_create_object` to know which fields and values a class accepts.
+
+#### `xwiki_update_class_properties`
+Change attributes of existing class properties, e.g. `{"status": {"hint": "Current state"}}` or a StaticList's `values`. Only the attributes given change, and the class is read back to confirm. Renaming a property is refused, because xWiki would rewrite every object of the class. xWiki has no REST endpoint for editing classes, so this posts the class editor's `/bin/propupdate/` action with the CSRF token (`{property}_{attribute}=value` fields). The account needs edit rights on the class page.
+
+#### `xwiki_add_class_property`
+Add a property to a class by type name (`String`, `TextArea`, `Number`, `Boolean`, `Date`, `StaticList`, `DBList`, `Page`, `Users`, …), with optional attributes such as `prettyName` and `hint`. Uses the `/bin/propadd/` action, then reads the class back. There is no delete or rename tool for class properties: those change existing objects.
 
 #### `xwiki_list_objects`
 List all XObjects on a page. Optionally filter by `class_name`.
@@ -246,6 +252,7 @@ npm test        # 78 unit tests (mocked fetch)
 - [x] Phase 5 (v0.5.0) — Wiki tags, tag-based navigation, wiki-wide page finder, PDF export, single-property reads
 - [x] v0.6.0–v0.9.0 — Streamable HTTP transport, `xwiki_` tool prefix, Docker image, object write fix, page rollback
 - [x] v0.10.0 — Read-only / no-delete access modes, class property attributes in `xwiki_get_class`
+- [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)
 
 ---

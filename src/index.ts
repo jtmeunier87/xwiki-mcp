@@ -34,6 +34,8 @@ import { register as registerAddTags } from './tools/add-tags.js';
 // Class tools (Phase 3)
 import { register as registerListClasses } from './tools/list-classes.js';
 import { register as registerGetClass } from './tools/get-class.js';
+import { register as registerUpdateClassProperties } from './tools/update-class-properties.js';
+import { register as registerAddClassProperty } from './tools/add-class-property.js';
 
 // Object tools (Phase 3)
 import { register as registerListObjects } from './tools/list-objects.js';
@@ -88,6 +90,8 @@ const TOOLS: Array<[Access, Register]> = [
   // Classes and objects
   ['read', registerListClasses],
   ['read', registerGetClass],
+  ['write', registerUpdateClassProperties],
+  ['write', registerAddClassProperty],
   ['read', registerListObjects],
   ['read', registerGetObject],
   ['write', registerCreateObject],
