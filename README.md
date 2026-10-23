@@ -257,6 +257,7 @@ npm test        # 86 unit tests (mocked fetch)
 - [x] v0.10.0 — Read-only / no-delete access modes, class property attributes in `xwiki_get_class`
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
+- [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)
 
 ---
