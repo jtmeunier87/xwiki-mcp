@@ -9,7 +9,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     'Change attributes of existing properties of an XWiki class, e.g. hint, prettyName, or the values of a StaticList. Only the attributes given change; the class is read back to confirm. Renaming a property is not supported. Use xwiki_get_class first to see property and attribute names.',
     {
       class_name: z.string().describe('Fully qualified class name (e.g. "Sandbox.Code.ExampleClass")'),
-      properties: z.record(z.record(z.string())).describe(
+      properties: z.record(z.string(), z.record(z.string(), z.string())).describe(
         'Map of property name to the attributes to set, e.g. {"status": {"hint": "Current state"}, "title": {"prettyName": "Title"}}. Booleans are "1" or "0"; list values use the class separator, e.g. "Draft|Approved".',
       ),
     },

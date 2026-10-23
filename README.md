@@ -326,6 +326,7 @@ npm test        # 118 unit tests (mocked fetch)
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.14.1 — Dependencies current (zod 4, TypeScript 7, Vitest 5); Docker image on Node 24 LTS; Node 22+ required
 - [x] v0.14.0 — Tool annotations, `XWIKI_MCP_DISABLED_TOOLS`, `XWIKI_MCP_HTTP_TOKEN`, `XWIKI_MCP_HOST`, `XWIKI_TIMEOUT_MS`, images returned as images; copy page, recycle bin list/restore, property disable/enable and values, attachment move and history, version compare, comment edit/delete, XAR/HTML export
 - [x] v0.13.0 — `xwiki_list_class_objects`, `xwiki_remove_tags`, `xwiki_search_attachments`, `xwiki_move_page`, `xwiki_get_required_rights`
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)

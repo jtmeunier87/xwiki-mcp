@@ -11,7 +11,7 @@ export function register(server: McpServer, client: XWikiClient): void {
       class_name: z.string().describe('Fully qualified class name (e.g. "Sandbox.Code.ExampleClass")'),
       property: z.string().describe('New property name: letters and digits, no spaces (e.g. "dueDate")'),
       type: z.string().describe('Property type as xwiki_get_class shows it, e.g. String, TextArea, Number, Boolean, Date, StaticList, DBList, Page, Users'),
-      attributes: z.record(z.string()).optional().describe('Attributes to set after adding, e.g. {"prettyName": "Due date", "hint": "Date the work is due"}'),
+      attributes: z.record(z.string(), z.string()).optional().describe('Attributes to set after adding, e.g. {"prettyName": "Due date", "hint": "Date the work is due"}'),
     },
     async ({ class_name, property, type, attributes }) => {
       try {

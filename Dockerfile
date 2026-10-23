@@ -1,7 +1,7 @@
 # Build on the runner's own platform: the output is plain JavaScript and every
 # production dependency is pure JS, so nothing runs Node under QEMU emulation
 # (emulated Node crashed the arm64 build with SIGILL, exit code 132).
-FROM --platform=$BUILDPLATFORM node:20-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN npm ci && npm run build && rm -rf node_modules && npm ci --omit=dev
@@ -9,7 +9,7 @@ RUN npm ci && npm run build && rm -rf node_modules && npm ci --omit=dev
 # Install supergateway for streamable HTTP transport
 RUN npm install -g supergateway
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 # Copy built output and production deps only
