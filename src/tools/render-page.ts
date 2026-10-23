@@ -13,6 +13,8 @@ Useful for:
 - Getting the rendered HTML output of a page
 - Reading macro-generated content that is not visible in raw page source
 
+A record page displayed by a sheet (a class or document sheet binding) renders through that sheet, as a reader sees it; plain text is taken from that rendered HTML.
+
 Note: uses the xWiki action URL (/bin/get/...), not the REST API.`,
       inputSchema: z.object({
         space: z.string().describe("Wiki space name (e.g. 'Main', 'Sandbox')"),
@@ -20,7 +22,7 @@ Note: uses the xWiki action URL (/bin/get/...), not the REST API.`,
         output: z
           .enum(['plain', 'html'])
           .default('plain')
-          .describe("Output format: 'plain' for readable plain text (default), 'html' for rendered HTML"),
+          .describe("Output format: 'plain' for readable plain text (default), 'html' for rendered HTML; both show the page as a reader sees it, sheet included"),
       }),
     },
     async ({ space, page, output }) => {

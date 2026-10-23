@@ -207,6 +207,23 @@ describe.skipIf(!URL_)('live XWiki', () => {
     expect(code.property.value).toBe('.a { color: red; }\n.b { color: blue; }');
   });
 
+  it('renders a record page through its class sheet', async () => {
+    // A record page with no content of its own, displayed by the sheet bound to its class:
+    // the plain render must show the sheet's output, as a reader sees the page.
+    const cls = `${RUN}.Code.TestClass`;
+    await call('xwiki_create_page', {
+      space: `${RUN}.Code`, page: 'TestSheet', title: 'TestSheet',
+      content: "{{velocity}}Sheet shows $doc.getValue('status'){{/velocity}}",
+    });
+    await call('xwiki_create_object', { space: `${RUN}.Code`, page: 'TestClass', class_name: 'XWiki.ClassSheetBinding', properties: { sheet: `${RUN}.Code.TestSheet` } });
+    await call('xwiki_create_page', { space: `${RUN}.Data`, page: 'Shown', title: 'Shown', content: '' });
+    await call('xwiki_create_object', { space: `${RUN}.Data`, page: 'Shown', class_name: cls, properties: { status: 'shown' } });
+    const plain = await call('xwiki_render_page', { space: `${RUN}.Data`, page: 'Shown' });
+    expect(plain.text).toContain('Sheet shows shown');
+    const html = await call('xwiki_render_page', { space: `${RUN}.Data`, page: 'Shown', output: 'html' });
+    expect(html.text).toContain('Sheet shows shown');
+  });
+
   it('keeps tags and comments in step', async () => {
     await page('Social', 'Post');
     await call('xwiki_add_tags', { space: `${RUN}.Social`, page: 'Post', tags: ['a', 'b', 'c'] });
