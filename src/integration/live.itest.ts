@@ -213,8 +213,16 @@ describe.skipIf(!URL_)('live XWiki', () => {
     const cls = `${RUN}.Code.TestClass`;
     await call('xwiki_create_page', {
       space: `${RUN}.Code`, page: 'TestSheet', title: 'TestSheet',
-      content: "{{velocity}}Sheet shows $doc.getValue('status'){{/velocity}}",
+      // Like real sheets, the output is HTML inside an html macro, which xWiki's plain renderer drops.
+      content: `{{velocity}}{{html}}<p>Sheet shows $doc.getObject('${cls}').getProperty('status').value</p>{{/html}}{{/velocity}}`,
     });
+    // A wiki without the standard flavor has no XWiki.ClassSheetBinding class yet; define its
+    // one property on the throwaway test wiki so the binding object can hold the sheet.
+    const binding = await client.callTool({ name: 'xwiki_get_class', arguments: { class_name: 'XWiki.ClassSheetBinding' } });
+    const hasSheet = !binding.isError && JSON.stringify(binding.content).includes('\\"sheet\\"');
+    if (!hasSheet) {
+      await call('xwiki_add_class_property', { class_name: 'XWiki.ClassSheetBinding', property: 'sheet', type: 'Page' });
+    }
     await call('xwiki_create_object', { space: `${RUN}.Code`, page: 'TestClass', class_name: 'XWiki.ClassSheetBinding', properties: { sheet: `${RUN}.Code.TestSheet` } });
     await call('xwiki_create_page', { space: `${RUN}.Data`, page: 'Shown', title: 'Shown', content: '' });
     await call('xwiki_create_object', { space: `${RUN}.Data`, page: 'Shown', class_name: cls, properties: { status: 'shown' } });

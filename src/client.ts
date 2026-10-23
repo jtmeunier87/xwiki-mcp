@@ -1068,9 +1068,9 @@ export class XWikiClient {
    * syntax: 'plain' | 'html' (default: 'plain')
    */
   async renderPage(space: string, page: string, syntax: 'plain' | 'html' = 'plain'): Promise<RenderResult> {
-    // Both outputs render the page as a reader sees it, including a sheet applied through a
-    // class or document sheet binding (xpage=plain rendered only the page's own content, so a
-    // record page displayed by its sheet came back empty). Plain text is taken from that HTML.
+    // Both outputs render the page as a reader sees it, sheet included, as HTML. Plain text is
+    // taken from that HTML: xWiki's own plain renderer drops the output of html macros, so a
+    // page whose sheet draws its view inside {{html}} came back empty.
     const actionUrl = `${config.baseUrl}/bin/get/${this.actionPath(space, page)}`;
     const url = new URL(actionUrl);
     url.searchParams.set('outputSyntax', 'annotatedhtmlmacros');
