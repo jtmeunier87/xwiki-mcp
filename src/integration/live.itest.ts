@@ -108,6 +108,11 @@ describe.skipIf(!URL_)('live XWiki', () => {
     expect((await call('xwiki_get_page', { space: `${RUN}.Moved.Child`, page: 'WebHome' })).content).toBe('c');
     const tree = await call('xwiki_get_page_tree', { space: `${RUN}.Moved`, page: 'WebHome', hierarchy: 'nestedpages' });
     expect(tree.pages.map((p: { reference: string }) => p.reference)).toEqual([`${RUN}.Moved.Child.WebHome`]);
+    // The root page has its own row, with its own objects
+    await call('xwiki_add_tags', { space: `${RUN}.Moved`, page: 'WebHome', tags: ['tree-root'] });
+    const withRoot = await call('xwiki_get_page_tree', { space: `${RUN}.Moved`, page: 'WebHome', hierarchy: 'nestedpages' });
+    expect(withRoot.root_page).toMatchObject({ reference: `${RUN}.Moved.WebHome`, level: 0, child_count: 1 });
+    expect(withRoot.root_page.classes['XWiki.TagClass']).toBe(1);
   });
 
   it('deletes a page, lists it in the recycle bin and restores it', async () => {

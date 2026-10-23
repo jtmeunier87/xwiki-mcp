@@ -9,7 +9,7 @@ export function register(server: McpServer, client: XWikiClient): void {
     {
       description: `Get every descendant of a page in one call: a report of the page tree under a root page.
 
-Each page row has its reference, title, level (1 = direct child of the root), parent, number of direct children, URL, and the object classes attached to it with a count per class (e.g. {"XWiki.TagClass": 1}). class_totals counts how many pages in the tree carry each class. Rows come in depth-first order, each page followed by its descendants.
+root_page is the root page's own row (level 0), with its object classes; pages lists its descendants. Each row has its reference, title, level (1 = direct child of the root), parent, number of direct children, URL, and the object classes attached to it with a count per class (e.g. {"XWiki.TagClass": 1}). class_totals counts how many pages in the tree, the root included, carry each class. Rows in pages come in depth-first order, each page followed by its descendants.
 
 hierarchy:
 - parentchild (default): follows each page's parent field, as XWiki's REST children endpoint does by default.

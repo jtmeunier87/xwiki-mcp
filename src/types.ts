@@ -424,7 +424,7 @@ export interface RollbackResult {
 export interface PageTreeNode {
   reference: string;
   title: string;
-  /** 1 = direct child of the root */
+  /** 0 = the root page, 1 = direct child of the root */
   level: number;
   parent: string;
   child_count: number;
@@ -435,14 +435,16 @@ export interface PageTreeNode {
 
 export interface PageTree {
   root: string;
+  /** The root page itself (level 0), with its own object classes */
+  root_page: PageTreeNode;
   hierarchy: 'parentchild' | 'nestedpages';
   max_depth: number;
   total_pages: number;
   /** True when max_pages stopped the walk before the whole tree was read */
   truncated: boolean;
-  /** Class name -> number of pages in the tree carrying at least one object of it */
+  /** Class name -> number of pages in the tree (root included) carrying at least one object of it */
   class_totals?: Record<string, number>;
-  /** Depth-first order, each page followed by its descendants */
+  /** The root's descendants, depth-first, each page followed by its descendants (the root is in root_page) */
   pages: PageTreeNode[];
 }
 

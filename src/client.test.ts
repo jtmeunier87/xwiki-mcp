@@ -1382,6 +1382,8 @@ describe('getPageTree', () => {
     ],
   };
   const objects: Record<string, unknown[]> = {
+    // The root page's own object must be reported too
+    '/spaces/Docs/spaces/Guides/pages/WebHome/objects': [{ className: 'Sandbox.Code.ExampleClass', number: 0 }],
     '/spaces/Docs/spaces/Guides/pages/Setup/objects': [
       { className: 'XWiki.TagClass', number: 0 },
       { className: 'Sandbox.Code.ExampleClass', number: 0 },
@@ -1397,7 +1399,9 @@ describe('getPageTree', () => {
       const path = new URL(url).pathname.replace('/rest/wikis/xwiki', '');
       const body = path.endsWith('/children')
         ? { pageSummaries: children[path] ?? [] }
-        : { objectSummaries: objects[path] ?? [] };
+        : path.endsWith('/objects')
+          ? { objectSummaries: objects[path] ?? [] }
+          : { title: 'Guides', content: '', syntax: 'xwiki/2.1', parent: 'Docs.WebHome', xwikiAbsoluteUrl: 'https://wiki.example.com/Guides' };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body), headers: { get: () => null } });
     });
   }
@@ -1409,6 +1413,15 @@ describe('getPageTree', () => {
     const tree = await new XWikiClient().getPageTree('Docs.Guides', 'WebHome');
 
     expect(tree.root).toBe('Docs.Guides.WebHome');
+    expect(tree.root_page).toEqual({
+      reference: 'Docs.Guides.WebHome',
+      title: 'Guides',
+      level: 0,
+      parent: 'Docs.WebHome',
+      child_count: 2,
+      url: 'https://wiki.example.com/Guides',
+      classes: { 'Sandbox.Code.ExampleClass': 1 },
+    });
     expect(tree.total_pages).toBe(3);
     expect(tree.truncated).toBe(false);
     expect(tree.pages.map(p => [p.reference, p.level, p.child_count])).toEqual([
@@ -1419,10 +1432,9 @@ describe('getPageTree', () => {
     expect(tree.pages[0].classes).toEqual({ 'XWiki.TagClass': 1, 'Sandbox.Code.ExampleClass': 2 });
     expect(tree.pages[2].title).toBe('Usage');
     expect(tree.pages[2].classes).toEqual({});
-    expect(tree.class_totals).toEqual({ 'XWiki.TagClass': 1, 'Sandbox.Code.ExampleClass': 2 });
+    expect(tree.class_totals).toEqual({ 'XWiki.TagClass': 1, 'Sandbox.Code.ExampleClass': 3 });
 
-    const url: string = fetch.mock.calls[0][0];
-    expect(url).toContain('hierarchy=parentchild');
+    expect(fetch.mock.calls.some(c => String(c[0]).includes('/children') && String(c[0]).includes('hierarchy=parentchild'))).toBe(true);
   });
 
   it('honours max_depth, max_pages, hierarchy and include_objects', async () => {
