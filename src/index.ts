@@ -21,6 +21,7 @@ import { register as registerGetPageTree } from './tools/get-page-tree.js';
 // Write tools (Phase 1)
 import { register as registerCreatePage } from './tools/create-page.js';
 import { register as registerUpdatePage } from './tools/update-page.js';
+import { register as registerEditPage } from './tools/edit-page.js';
 import { register as registerDeletePage } from './tools/delete-page.js';
 import { register as registerAddComment } from './tools/add-comment.js';
 import { register as registerListComments } from './tools/list-comments.js';
@@ -100,6 +101,7 @@ const TOOLS: Array<[Toolset, Access, Register]> = [
   // Pages (write)
   ['pages', 'write', registerCreatePage],
   ['pages', 'write', registerUpdatePage],
+  ['pages', 'write', registerEditPage],
   ['pages', 'write', registerMovePage],
   ['pages', 'write', registerCopyPage],
   ['pages', 'delete', registerDeletePage],

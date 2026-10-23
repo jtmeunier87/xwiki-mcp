@@ -67,3 +67,84 @@ describe('xwiki_list_page_versions', () => {
     expect(r).toEqual({ content: [{ type: 'text', text: 'Page not found: Main/Missing' }], isError: true });
   });
 });
+
+describe('applyEdits', () => {
+  it('applies edits in order and reports the line of each', async () => {
+    const { applyEdits } = await import('../edit.js');
+    const r = applyEdits('a\nb grid-3\nc', [
+      { old_text: 'grid-3', new_text: 'grid-2' },
+      { old_text: 'c', new_text: 'd' },
+    ]);
+    expect(r.text).toBe('a\nb grid-2\nd');
+    expect(r.changes.map(c => c.line)).toEqual([2, 3]);
+  });
+
+  it('refuses a missing, repeated or empty old_text', async () => {
+    const { applyEdits } = await import('../edit.js');
+    expect(() => applyEdits('abc', [{ old_text: 'x', new_text: 'y' }])).toThrow(/not found/);
+    expect(() => applyEdits('a a', [{ old_text: 'a', new_text: 'b' }])).toThrow(/occurs 2 times/);
+    expect(() => applyEdits('abc', [{ old_text: '', new_text: 'y' }])).toThrow(/empty/);
+    expect(() => applyEdits('abc', [])).toThrow(/at least one/);
+  });
+});
+
+describe('xwiki_edit_page', () => {
+  function fakeClient(content: string, version = '3.1') {
+    const state = { content, version, prop: 'body { color: red; }', writes: 0 };
+    return {
+      state,
+      getPage: async () => ({ title: 'T', content: state.content, syntax: 'xwiki/2.1', version: state.version, url: 'https://wiki.example.com/p' }),
+      updatePage: async (_s: string, _p: string, c: string) => {
+        state.content = c;
+        state.writes++;
+        state.version = '4.1';
+        return { title: 'T', version: '4.1', url: '', status: 'updated' };
+      },
+      getObjectProperty: async () => ({ name: 'code', value: state.prop }),
+      updateObject: async (_s: string, _p: string, cls: string, n: number, props: Record<string, string>) => {
+        state.prop = props.code;
+        state.writes++;
+        state.version = '4.1';
+        return { class_name: cls, number: n, status: 'updated' };
+      },
+    };
+  }
+
+  it('edits page content and reads it back', async () => {
+    const { register } = await import('./edit-page.js');
+    const c = fakeClient('{{velocity}}\n"layout":"grid-3x2"\n{{/velocity}}');
+    const r = await handlerOf(register, c)({ space: 'Main', page: 'Sheet', object_number: 0, edits: [{ old_text: 'grid-3x2', new_text: 'grid-2' }] });
+    expect(r.isError).toBeUndefined();
+    expect(c.state.content).toBe('{{velocity}}\n"layout":"grid-2"\n{{/velocity}}');
+    expect(JSON.parse(r.content[0].text)).toMatchObject({ status: 'updated', target: 'content', previous_version: '3.1', version: '4.1', verified: true, changes: [{ line: 2 }] });
+  });
+
+  it('edits one object property', async () => {
+    const { register } = await import('./edit-page.js');
+    const c = fakeClient('x');
+    const r = await handlerOf(register, c)({
+      space: 'Main', page: 'Style', class_name: 'XWiki.StyleSheetExtension', object_number: 0, property: 'code',
+      edits: [{ old_text: 'red', new_text: 'blue' }],
+    });
+    expect(c.state.prop).toBe('body { color: blue; }');
+    expect(JSON.parse(r.content[0].text).target).toBe('XWiki.StyleSheetExtension[0].code');
+  });
+
+  it('saves nothing when an edit does not match or the version moved on', async () => {
+    const { register } = await import('./edit-page.js');
+    const c = fakeClient('a b');
+    const h = handlerOf(register, c);
+    const miss = await h({ space: 'Main', page: 'P', object_number: 0, edits: [{ old_text: 'b', new_text: 'c' }, { old_text: 'zz', new_text: 'y' }] });
+    expect(miss.isError).toBe(true);
+    expect(miss.content[0].text).toMatch(/^Nothing saved\. Edit 2: old_text was not found/);
+    const stale = await h({ space: 'Main', page: 'P', object_number: 0, expected_version: '2.1', edits: [{ old_text: 'b', new_text: 'c' }] });
+    expect(stale.content[0].text).toMatch(/at version 3\.1, not 2\.1/);
+    expect(c.state.writes).toBe(0);
+  });
+
+  it('needs class_name and property together', async () => {
+    const { register } = await import('./edit-page.js');
+    const r = await handlerOf(register, fakeClient('a'))({ space: 'Main', page: 'P', object_number: 0, property: 'code', edits: [{ old_text: 'a', new_text: 'b' }] });
+    expect(r.content[0].text).toMatch(/class_name/);
+  });
+});
