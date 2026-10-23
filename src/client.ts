@@ -205,6 +205,7 @@ export class XWikiClient {
     const data = await this.get<XWikiPageRaw>(path);
     return {
       title: data.title,
+      ...(data.rawTitle != null && data.rawTitle !== data.title ? { raw_title: data.rawTitle } : {}),
       content: data.content,
       syntax: data.syntax,
       author: data.contentAuthor ?? data.author,
@@ -337,7 +338,9 @@ export class XWikiClient {
 
     const xmlParts: string[] = ['<?xml version="1.0" encoding="UTF-8"?>'];
     xmlParts.push('<page xmlns="http://www.xwiki.org">');
-    xmlParts.push(`<title>${this.escapeXml(title ?? current.title)}</title>`);
+    // Keep the STORED title: `title` is rendered, so writing it back would replace a sheet's
+    // Velocity title with its output and give every record of the class the sheet's name.
+    xmlParts.push(`<title>${this.escapeXml(title ?? current.raw_title ?? current.title)}</title>`);
     xmlParts.push(`<content>${this.escapeXml(content ?? current.content)}</content>`);
     xmlParts.push(`<syntax>${this.escapeXml(syntax ?? current.syntax)}</syntax>`);
     xmlParts.push('</page>');
@@ -1387,7 +1390,7 @@ export class XWikiClient {
       form_token: await this.getCsrfToken(),
     });
     // Without a title, XWiki retitles a page whose title equals its old name after the new name.
-    const title = options.newTitle || source.title;
+    const title = options.newTitle || source.raw_title || source.title;
     if (title) form.set('newPageTitle', title);
 
     // XWiki rewrites only the pages its link index lists, and silently skips the rest (e.g. pages
@@ -1545,7 +1548,7 @@ export class XWikiClient {
       form_token: await this.getCsrfToken(),
     });
     // Without a title, XWiki retitles a page whose title equals its old name after the new name.
-    const copyTitle = options.newTitle || source.title;
+    const copyTitle = options.newTitle || source.raw_title || source.title;
     if (copyTitle) form.set('targetPageTitle', copyTitle);
 
     const response = await this.postPageAction('view', space, page, form, config.timeoutMs * 4,

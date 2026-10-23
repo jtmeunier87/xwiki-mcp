@@ -74,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.21.0
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.21.1
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
@@ -153,7 +153,7 @@ List all spaces in the wiki.
 List pages in a space with pagination (`start`, `limit`). Space names use dot notation for nested spaces.
 
 #### `xwiki_get_page`
-Get page content, title, syntax, author, version and parent. Long content comes in windows of `max_chars` (default 40,000 characters, about 10k tokens): when `content_truncated` is true, call again with `offset` = `next_offset`.
+Get page content, title, syntax, author, version and parent. `title` is rendered; when the stored title differs (e.g. Velocity code in a sheet's title, which gives each record of the class its own name) it is also returned as `raw_title`. Long content comes in windows of `max_chars` (default 40,000 characters, about 10k tokens): when `content_truncated` is true, call again with `offset` = `next_offset`.
 
 #### `xwiki_list_page_children`
 Get immediate child pages of a given page. Hidden pages (e.g. class, sheet and template pages) are listed only when the xWiki account's Display Hidden Pages preference is on; xWiki's REST API has no option to include them otherwise.
@@ -173,7 +173,7 @@ Analyse which rights a page's content needs (script or programming right for Vel
 Create a new page with title, content, optional parent, and optional syntax.
 
 #### `xwiki_update_page`
-Update an existing page by replacing its whole content, its title, or both. Fetches current version first to preserve fields not specified. To change only part of the content, use `xwiki_replace_in_page`.
+Update an existing page by replacing its whole content, its title, or both. Fetches current version first to preserve fields not specified; an omitted title keeps the stored title, Velocity code included (so does `xwiki_replace_in_page`). To change only part of the content, use `xwiki_replace_in_page`.
 
 #### `xwiki_replace_in_page`
 Targeted edit: replace exact pieces of text in a page's content, or in one object property (`class_name`, `object_number`, `property`, e.g. the `code` of a `XWiki.JavaScriptExtension`), without sending the whole text. Made for code on long pages, such as Velocity or Groovy sheets. `edits` is a list of `{old_text, new_text}` applied in order; each `old_text` must occur exactly once (whitespace and line breaks included), and nothing is saved unless every edit matches. `expected_version` refuses the edit if the page has changed since that version was read. The saved text is read back and compared; the result gives the old and new version, the size before and after, and the line of each change. Saving script content still needs the rights the scripts need (`xwiki_get_required_rights`).
@@ -385,6 +385,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.21.1 — `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page` and `xwiki_copy_page` keep a page's stored title. Before, they wrote back the rendered title, so saving a sheet whose title is Velocity code replaced that code with its output and every record of the class showed the sheet's name. `xwiki_get_page` returns `raw_title` when it differs from the rendered title
 - [x] v0.21.0 — `xwiki_get_page_tree` returns `root_page`: the root page's own row with its object classes (before, only descendants were reported, so the root's objects were never listed); `class_totals` includes the root. `xwiki_render_page` renders a page as a reader sees it, through its sheet (plain text came back empty for a page whose sheet draws its view inside an html macro, because xWiki's plain renderer drops html macro output). Tree and children docs say hidden pages need the account's Display Hidden Pages preference
 - [x] v0.20.1 — `xwiki_replace_in_page` (first released version; a `v0.20.0` tag was pushed early on the 0.19.0 code and is not a release): targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving
 - [x] v0.19.0 — Fixes from a second live test: `xwiki_search_pages` honours `space` (the wiki-wide search ignored it); `xwiki_compare_page_versions` gives the current version its own date and author; `xwiki_list_page_objects` returns property values (`include_properties`); HTML export returns each page's content area, not the whole skin page; a missing page's history says "Page not found"; `xwiki_move_page` no longer says Page properties are never rewritten (it depends on the XWiki version)

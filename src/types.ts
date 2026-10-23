@@ -35,6 +35,8 @@ export interface XWikiPageRaw {
   id: string;
   fullName: string;
   title: string;
+  /** Stored title before rendering (e.g. Velocity code in a sheet's title). */
+  rawTitle?: string;
   content: string;
   syntax: string;
   author?: string;
@@ -183,6 +185,8 @@ export interface PageSummary {
 
 export interface Page {
   title: string;
+  /** Stored title, only when it differs from the rendered title (e.g. a sheet's Velocity title). */
+  raw_title?: string;
   content: string;
   syntax: string;
   author?: string;
