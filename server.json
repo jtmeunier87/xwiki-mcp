@@ -7,11 +7,11 @@
     "url": "https://github.com/jtmeunier87/xwiki-mcp",
     "source": "github"
   },
-  "version": "0.20.0",
+  "version": "0.20.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/jtmeunier87/xwiki-mcp:0.20.0",
+      "identifier": "ghcr.io/jtmeunier87/xwiki-mcp:0.20.1",
       "transport": {
         "type": "stdio"
       },

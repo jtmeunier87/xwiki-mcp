@@ -74,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.20.0
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.20.1
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
@@ -385,7 +385,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
-- [x] v0.20.0 — `xwiki_replace_in_page` (named `xwiki_edit_page` before release): targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving
+- [x] v0.20.1 — `xwiki_replace_in_page` (first released version; a `v0.20.0` tag was pushed early on the 0.19.0 code and is not a release): targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving
 - [x] v0.19.0 — Fixes from a second live test: `xwiki_search_pages` honours `space` (the wiki-wide search ignored it); `xwiki_compare_page_versions` gives the current version its own date and author; `xwiki_list_page_objects` returns property values (`include_properties`); HTML export returns each page's content area, not the whole skin page; a missing page's history says "Page not found"; `xwiki_move_page` no longer says Page properties are never rewritten (it depends on the XWiki version)
 - [x] v0.18.0 — Fixes from a live test: `xwiki_move_page` checks that links were rewritten (`backlinks_found`, `links_not_updated`); copy and move keep the title; HTML export returns the page HTML, not a multi-MB zip; attachment versions newest first; history of a missing page is not found; dates are ISO strings everywhere; empty headline and empty required-right entries left out; upload URL without a stale `rev`; a rejected request (400) carries XWiki's reason; `xwiki_list_classes` honours `start` / `limit` (XWiki returns every class); `xwiki_list_recent_changes` names the page of each change
 - [x] v0.17.0 — MCP TypeScript SDK v2: protocol 2026-07-28 (no handshake or sessions, header-validated HTTP requests, cacheable tool list), with 2025-era clients that open with `initialize` (e.g. supergateway) still served
