@@ -8,17 +8,19 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 42 tools across 7 categories
+## 42 tools across 9 categories
 
 | Category | Count | Tools |
 |---|---|---|
-| **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_get_page_tree`, `xwiki_search`, `xwiki_get_required_rights` |
-| **Pages (Write) & Comments** | 6 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_delete_page`, `xwiki_add_comment`, `xwiki_get_comments` |
+| **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_get_page_tree`, `xwiki_find_pages`, `xwiki_get_required_rights` |
+| **Pages (Write)** | 4 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki_delete_page` |
+| **Comments** | 2 | `xwiki_get_comments`, `xwiki_add_comment` |
 | **Attachments** | 5 | `xwiki_get_attachments`, `xwiki_search_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
-| **Tags** | 3 | `xwiki_get_tags`, `xwiki_add_tags`, `xwiki_remove_tags` |
-| **Classes & Objects** | 10 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
-| **History & Query** | 6 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_rollback_page`, `xwiki_advanced_search`, `xwiki_render_page`, `xwiki_get_recent_changes` |
-| **Wiki-Level** | 5 | `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag`, `xwiki_find_pages`, `xwiki_export_page`, `xwiki_get_object_property` |
+| **Tags** | 5 | `xwiki_get_tags`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag` |
+| **Classes & Objects** | 11 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **History** | 4 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_rollback_page`, `xwiki_get_recent_changes` |
+| **Search & Query** | 2 | `xwiki_search`, `xwiki_advanced_search` |
+| **Render & Export** | 2 | `xwiki_render_page`, `xwiki_export_page` |
 
 ---
 
@@ -93,7 +95,7 @@ Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_move_page`, `xwiki
 
 ## Tool Reference
 
-### Page Read Tools
+### Pages (Read)
 
 #### `xwiki_list_spaces`
 List all spaces in the wiki.
@@ -110,13 +112,13 @@ Get immediate child pages of a given page.
 #### `xwiki_get_page_tree`
 Report the whole page tree under a root page in one call. Each descendant comes back with its reference, title, level (1 = direct child), parent, direct child count, URL and the object classes attached to it with a count per class; `class_totals` counts the pages carrying each class. Rows are depth-first. `hierarchy` is `parentchild` (the page's parent field, xWiki's REST default) or `nestedpages` (page/space nesting). `max_depth` (default 50) and `max_pages` (default 500, `truncated: true` when reached) bound the walk; `include_objects: false` skips the class listing. Costs one REST request per page for children plus one per page for objects, a few in parallel.
 
-#### `xwiki_search`
-Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
+#### `xwiki_find_pages`
+Find pages wiki-wide by name, space, and/or author — without needing to know the exact space. Deduplicates results automatically. At least one filter required.
 
 #### `xwiki_get_required_rights`
 Analyse which rights a page's content needs (script or programming right for Velocity/Groovy, admin right for some macros) and compare them with the rights the page declares. Returns `declared`, `needed` (with whether the MCP account has each right) and plain-text `findings`. xWiki 17.4+; needs edit right on the page.
 
-### Page Write Tools
+### Pages (Write)
 
 #### `xwiki_create_page`
 Create a new page with title, content, optional parent, and optional syntax.
@@ -130,13 +132,15 @@ Move or rename a page, as the wiki's Rename action does: history, objects, attac
 #### `xwiki_delete_page`
 Permanently delete a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 
-#### `xwiki_add_comment`
-Add a comment to a page. Supports threaded replies via `reply_to`.
+### Comments
 
 #### `xwiki_get_comments`
 List all comments on a page.
 
-### Attachment Tools
+#### `xwiki_add_comment`
+Add a comment to a page. Supports threaded replies via `reply_to`.
+
+### Attachments
 
 #### `xwiki_get_attachments`
 List attachments on a page with name, size, MIME type, and download URL.
@@ -153,7 +157,7 @@ Download a file — returns base64 content, MIME type, and size.
 #### `xwiki_delete_attachment`
 Delete an attachment from a page. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 
-### Tag Tools
+### Tags
 
 #### `xwiki_get_tags`
 Get tags on a specific page.
@@ -164,7 +168,13 @@ Add tags to a page (additive — preserves existing tags, no duplicates).
 #### `xwiki_remove_tags`
 Remove tags from a page, keeping the others. Returns the tags removed, any that were not on the page, and the remaining tags.
 
-### Class & Object Tools
+#### `xwiki_get_all_wiki_tags`
+List every tag used anywhere in the wiki. Use this before `xwiki_get_pages_by_tag` to discover available tags.
+
+#### `xwiki_get_pages_by_tag`
+Get all pages that have a specific tag (e.g. `howto`).
+
+### Classes & Objects
 
 #### `xwiki_list_classes`
 List all XWiki classes defined in the wiki.
@@ -184,6 +194,9 @@ List all XObjects on a page. Optionally filter by `class_name`.
 #### `xwiki_get_object`
 Get a single object by class name and object number (0-based).
 
+#### `xwiki_get_object_property`
+Read a single named property from an XObject — more efficient than `xwiki_get_object` when only one field is needed. Useful for status checks and conditional logic.
+
 #### `xwiki_list_class_objects`
 List the objects of one class across the whole wiki with the page each one is on, ordered by page (or by page date with `order: "date"`). `include_properties` (default true) adds every property value, one request per object. Paged with `start` / `limit` (default 50); pages the account cannot view are left out, so keep paging while `has_more` is true.
 
@@ -196,7 +209,7 @@ Update properties of an existing object. Only specified properties are changed.
 #### `xwiki_delete_object`
 Delete an object by class name and number. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
 
-### History & Query Tools
+### History
 
 #### `xwiki_get_page_history`
 List all revisions of a page — version string, timestamp, author, edit comment.
@@ -207,31 +220,24 @@ Retrieve full page content at a specific historical version (e.g. `3.1`).
 #### `xwiki_rollback_page`
 Roll a page back to an earlier version (content and objects). xWiki saves the old version as a new version, so history is kept. Uses the `/bin/rollback/` action URL with the CSRF token.
 
+#### `xwiki_get_recent_changes`
+Get the most recent modifications across the entire wiki.
+
+### Search & Query
+
+#### `xwiki_search`
+Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
+
 #### `xwiki_advanced_search`
 Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`.
+
+### Render & Export
 
 #### `xwiki_render_page`
 Render a page through the xWiki macro engine to plain text or HTML. Useful for pages with macros, velocity, or include blocks. Uses the action URL (`/bin/get/`) — not the REST API.
 
-#### `xwiki_get_recent_changes`
-Get the most recent modifications across the entire wiki.
-
-### Wiki-Level Tools
-
-#### `xwiki_get_all_wiki_tags`
-List every tag used anywhere in the wiki. Use this before `xwiki_get_pages_by_tag` to discover available tags.
-
-#### `xwiki_get_pages_by_tag`
-Get all pages that have a specific tag (e.g. `howto`).
-
-#### `xwiki_find_pages`
-Find pages wiki-wide by name, space, and/or author — without needing to know the exact space. Deduplicates results automatically. At least one filter required.
-
 #### `xwiki_export_page`
 Export a page as a PDF file. Returns base64-encoded PDF content, content type, and size. Requires the xWiki PDF export extension.
-
-#### `xwiki_get_object_property`
-Read a single named property from an XObject — more efficient than `xwiki_get_object` when only one field is needed. Useful for status checks and conditional logic.
 
 ---
 

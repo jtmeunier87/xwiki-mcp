@@ -73,32 +73,38 @@ type Register = (server: McpServer, client: XWikiClient) => void;
 // Every tool with the access it needs. XWIKI_MCP_READ_ONLY keeps only 'read';
 // 'delete' tools also need XWIKI_MCP_ALLOW_DELETE.
 const TOOLS: Array<[Access, Register]> = [
-  // Pages
+  // Pages (read)
   ['read', registerListSpaces],
   ['read', registerListPages],
   ['read', registerGetPage],
-  ['read', registerSearch],
   ['read', registerGetPageChildren],
   ['read', registerGetPageTree],
+  ['read', registerFindPages],
+  ['read', registerGetRequiredRights],
+
+  // Pages (write)
   ['write', registerCreatePage],
   ['write', registerUpdatePage],
   ['write', registerMovePage],
   ['delete', registerDeletePage],
-  ['read', registerGetRequiredRights],
+
+  // Comments
   ['read', registerGetComments],
   ['write', registerAddComment],
 
   // Attachments
   ['read', registerGetAttachments],
   ['read', registerSearchAttachments],
-  ['read', registerDownloadAttachment],
   ['write', registerUploadAttachment],
+  ['read', registerDownloadAttachment],
   ['delete', registerDeleteAttachment],
 
   // Tags
   ['read', registerGetTags],
   ['write', registerAddTags],
   ['write', registerRemoveTags],
+  ['read', registerGetAllWikiTags],
+  ['read', registerGetPagesByTag],
 
   // Classes and objects
   ['read', registerListClasses],
@@ -107,25 +113,25 @@ const TOOLS: Array<[Access, Register]> = [
   ['write', registerAddClassProperty],
   ['read', registerListObjects],
   ['read', registerGetObject],
+  ['read', registerGetObjectProperty],
   ['read', registerListClassObjects],
   ['write', registerCreateObject],
   ['write', registerUpdateObject],
   ['delete', registerDeleteObject],
 
-  // History, query, render
+  // History
   ['read', registerGetPageHistory],
   ['read', registerGetPageVersion],
   ['write', registerRollbackPage],
-  ['read', registerAdvancedSearch],
-  ['read', registerRenderPage],
   ['read', registerGetRecentChanges],
 
-  // Wiki-level
-  ['read', registerGetAllWikiTags],
-  ['read', registerGetPagesByTag],
-  ['read', registerFindPages],
+  // Search and query
+  ['read', registerSearch],
+  ['read', registerAdvancedSearch],
+
+  // Render and export
+  ['read', registerRenderPage],
   ['read', registerExportPage],
-  ['read', registerGetObjectProperty],
 ];
 
 function allowed(access: Access): boolean {
