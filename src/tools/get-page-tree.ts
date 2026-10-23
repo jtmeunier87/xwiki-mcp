@@ -15,7 +15,9 @@ hierarchy:
 - parentchild (default): follows each page's parent field, as XWiki's REST children endpoint does by default.
 - nestedpages: follows the page/space nesting (Docs.Guides.WebHome -> Docs.Guides.Setup.WebHome).
 
-The walk makes one request per page (plus one per page for objects), so large trees are capped by max_pages; truncated: true means the cap was reached. For direct children only, use xwiki_list_page_children.`,
+The walk makes one request per page (plus one per page for objects), so large trees are capped by max_pages; truncated: true means the cap was reached. For direct children only, use xwiki_list_page_children.
+
+Hidden pages (e.g. class, sheet and template pages) are listed only when the xWiki account's Display Hidden Pages preference is on; xWiki's REST API has no option to include them otherwise.`,
       inputSchema: z.object({
         space: z.string().describe('Space of the root page. Use dot notation for nested spaces: "Docs.Guides"'),
         page: z.string().describe('Root page name (e.g. "WebHome")'),

@@ -803,7 +803,7 @@ describe('renderPage', () => {
   it('returns plain text content with correct metadata', async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
-      text: () => Promise.resolve('This is the rendered plain text content of the page.'),
+      text: () => Promise.resolve('<p>This is the rendered plain text content of the page.</p>'),
       headers: { get: () => null },
     });
     vi.stubGlobal('fetch', fetch);
@@ -835,8 +835,9 @@ describe('renderPage', () => {
     await new XWikiClient().renderPage('Sandbox', 'TestPage', 'plain');
     const [url] = fetch.mock.calls[0];
     expect(url).toContain('/bin/get/Sandbox/TestPage');
-    expect(url).toContain('outputSyntax=plain');
-    expect(url).toContain('xpage=plain');
+    // Rendered as a reader sees it (sheets included), never content-only xpage=plain
+    expect(url).toContain('outputSyntax=annotatedhtmlmacros');
+    expect(url).not.toContain('xpage=plain');
     // Must NOT use the REST path
     expect(url).not.toContain('/rest/wikis');
   });

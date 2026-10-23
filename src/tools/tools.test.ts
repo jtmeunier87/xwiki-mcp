@@ -148,3 +148,22 @@ describe('xwiki_replace_in_page', () => {
     expect(r.content[0].text).toMatch(/class_name/);
   });
 });
+
+describe('htmlToText', () => {
+  it('keeps block and list structure, drops scripts and decodes entities', async () => {
+    const { htmlToText } = await import('../html-text.js');
+    const html =
+      '<div class="card"><script>var x = "<b>no</b>";</script><!--startmacro:code-->' +
+      '<h4 class="td-field-label">Overview</h4><dd><p>Add a colour &amp; a theme&hellip;</p></dd>' +
+      '<section hidden><ol><li>First <strong>step</strong></li><li>\n<span>Second</span></li></ol></section>' +
+      '<div class="code">line&#160;1<br/>line 2</div></div>';
+    expect(htmlToText(html)).toBe(
+      'Overview\nAdd a colour & a theme…\n- First step\n- Second\nline 1\nline 2',
+    );
+  });
+
+  it('returns an empty string for markup without text', async () => {
+    const { htmlToText } = await import('../html-text.js');
+    expect(htmlToText('<p><div class="wikimodel-emptyline"></div></p>')).toBe('');
+  });
+});

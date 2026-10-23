@@ -9,7 +9,8 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_list_page_children',
     {
       description:
-        'List the direct child pages of a wiki page, paged with start / limit. For every descendant in one call use xwiki_get_page_tree.',
+        'List the direct child pages of a wiki page, paged with start / limit. For every descendant in one call use xwiki_get_page_tree. ' +
+        "Hidden pages (e.g. class, sheet and template pages) are listed only when the xWiki account's Display Hidden Pages preference is on; xWiki's REST API has no option to include them otherwise.",
       inputSchema: z.object({
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Space1.SubSpace"'),
         page: z.string().describe('Parent page name'),

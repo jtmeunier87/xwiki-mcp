@@ -2,6 +2,7 @@ import { inflateRawSync } from 'node:zlib';
 import { config } from './config.js';
 import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
 import { unifiedDiff } from './diff.js';
+import { htmlToText } from './html-text.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -1067,14 +1068,12 @@ export class XWikiClient {
    * syntax: 'plain' | 'html' (default: 'plain')
    */
   async renderPage(space: string, page: string, syntax: 'plain' | 'html' = 'plain'): Promise<RenderResult> {
-    const outputSyntax = syntax === 'html' ? 'annotatedhtmlmacros' : 'plain';
-    // Action URLs use the original (non-REST) path pattern
+    // Both outputs render the page as a reader sees it, sheet included, as HTML. Plain text is
+    // taken from that HTML: xWiki's own plain renderer drops the output of html macros, so a
+    // page whose sheet draws its view inside {{html}} came back empty.
     const actionUrl = `${config.baseUrl}/bin/get/${this.actionPath(space, page)}`;
     const url = new URL(actionUrl);
-    url.searchParams.set('outputSyntax', outputSyntax);
-    if (syntax === 'plain') {
-      url.searchParams.set('xpage', 'plain');
-    }
+    url.searchParams.set('outputSyntax', 'annotatedhtmlmacros');
 
     const response = await fetch(url.toString(), {
       headers: { Accept: 'text/plain, text/html', ...this.authHeaders() },
@@ -1082,8 +1081,8 @@ export class XWikiClient {
     });
     if (!response.ok) throw new XWikiError(`renderPage failed: ${response.statusText}`, response.status);
 
-    const content = await response.text();
-    return { space, page, syntax, content };
+    const html = await response.text();
+    return { space, page, syntax, content: syntax === 'plain' ? htmlToText(html) : html };
   }
 
   /**
