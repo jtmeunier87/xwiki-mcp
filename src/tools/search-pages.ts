@@ -15,7 +15,7 @@ export function register(server: McpServer, client: XWikiClient): void {
           .optional()
           .default('content')
           .describe('Where to search: content (default), title, or page name'),
-        space: z.string().optional().describe('Limit search to a specific space'),
+        space: z.string().optional().describe('Limit search to pages directly in this space (dot notation, e.g. "Docs.Guides"); subspaces are not searched'),
         start: z.number().int().min(0).optional().default(0).describe('Pagination offset'),
         limit: z.number().int().min(1).max(100).optional().describe('Number of results (default 20)'),
       }),

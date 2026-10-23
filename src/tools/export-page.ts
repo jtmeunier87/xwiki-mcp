@@ -13,7 +13,7 @@ export function register(server: McpServer, client: XWikiClient): void {
 Formats:
 - pdf (default): the rendered page, from xWiki's PDF export (needs the PDF export extension).
 - xar: a wiki package (zip of page XML with objects and attachments) that can be imported into another wiki; a backup. Needs wiki admin rights. history: true includes page history.
-- html: the rendered page(s) as static HTML, returned as text in pages (path, html). The export's skin, script and image files are left out (files_omitted counts them). For one page's HTML alone, xwiki_render_page with output html is lighter.
+- html: the rendered page(s) as static HTML, returned as text in pages (path, html). Each page's html is its content area only, without the skin's menus, scripts and footer; the export's skin, script and image files are left out (files_omitted counts them). For one page's HTML alone, xwiki_render_page with output html is lighter.
 
 For xar and html, children: true also exports every page under a nested (WebHome) page.`,
       inputSchema: z.object({
