@@ -398,6 +398,17 @@ describe('listClasses', () => {
     const { classes } = await new XWikiClient().listClasses(0, 20);
     expect(classes).toEqual([]);
   });
+
+  it('cuts the page itself, as XWiki returns every class', async () => {
+    const clazzs = Array.from({ length: 7 }, (_, i) => ({ id: `Sandbox.C${i}`, name: `Sandbox.C${i}`, properties: [] }));
+    vi.stubGlobal('fetch', mockFetch({ clazzs }));
+    const first = await new XWikiClient().listClasses(0, 5);
+    expect(first.classes.map(c => c.id)).toEqual(['Sandbox.C0', 'Sandbox.C1', 'Sandbox.C2', 'Sandbox.C3', 'Sandbox.C4']);
+    expect(first.pagination).toEqual({ total: 7, start: 0, limit: 5, has_more: true });
+    const second = await new XWikiClient().listClasses(5, 5);
+    expect(second.classes.map(c => c.id)).toEqual(['Sandbox.C5', 'Sandbox.C6']);
+    expect(second.pagination.has_more).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -887,6 +898,18 @@ describe('getRecentChanges', () => {
     expect(changes[0].comment).toBe('Updated docs');
   });
 
+  it('names the page of each change', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      historySummaries: [
+        { pageId: 'xwiki:Docs.Guides.Setup', space: 'Docs.Guides', name: 'Setup', version: '3.1', modified: 1712100000000 },
+        { pageId: 'xwiki:Main.WebHome', version: '1.1', modified: 1712100000000 },
+      ],
+    }));
+    const changes = await new XWikiClient().getRecentChanges();
+    expect(changes[0].page).toBe('Docs.Guides.Setup');
+    expect(changes[1].page).toBe('Main.WebHome');
+  });
+
   it('calls the modifications endpoint with limit', async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true, status: 200, statusText: 'OK',
@@ -1126,7 +1149,7 @@ describe('exportPage', () => {
     expect(result.size_bytes).toBeGreaterThan(0);
     expect(result.content_base64).toBeTruthy();
     // Verify base64 decode round-trips correctly
-    const decoded = Buffer.from(result.content_base64, 'base64').toString();
+    const decoded = Buffer.from(result.content_base64!, 'base64').toString();
     expect(decoded).toContain('%PDF');
   });
 
@@ -1547,6 +1570,7 @@ describe('movePage', () => {
     let moved = false;
     const rest = routeFetch({
       'GET /spaces/Docs/spaces/Guides/pages/WebHome': page('https://wiki.example.com/bin/view/Docs/Guides/'),
+      'GET /query': { body: { searchResults: [] } },
       'GET ': { body: {} },
     });
     const fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
@@ -1567,13 +1591,13 @@ describe('movePage', () => {
 
     const result = await new XWikiClient().movePage('Docs.Guides', 'WebHome', 'Docs.Manuals', 'WebHome');
 
-    expect(result).toMatchObject({ from: 'Docs.Guides.WebHome', to: 'Docs.Manuals.WebHome', url: 'https://wiki.example.com/bin/view/Docs/Manuals/', children_moved: true, links_updated: true, redirect_left: false, status: 'moved' });
+    expect(result).toMatchObject({ from: 'Docs.Guides.WebHome', to: 'Docs.Manuals.WebHome', url: 'https://wiki.example.com/bin/view/Docs/Manuals/', children_moved: true, links_updated: true, backlinks_found: 0, redirect_left: false, status: 'moved' });
     const post = fetch.mock.calls.find(c => c[1]?.method === 'POST')!;
     expect(post[0]).toBe('https://wiki.example.com/bin/view/Docs/Guides/WebHome');
     const form = new URLSearchParams(String(post[1].body));
     expect(Object.fromEntries(form)).toMatchObject({
       xpage: 'rename', step: '2', newSpaceName: 'Docs', newPageName: 'Manuals', terminal: 'false',
-      deep: 'true', updateLinks: 'true', autoRedirect: 'false', form_token: 'test-csrf-token',
+      deep: 'true', updateLinks: 'true', autoRedirect: 'false', newPageTitle: 'T', form_token: 'test-csrf-token',
     });
   });
 
@@ -1661,8 +1685,10 @@ function statefulFetch(routes: Record<string, Reply | ((u: URL, init?: RequestIn
       status,
       statusText: String(status),
       json: () => Promise.resolve(r.body ?? {}),
+      arrayBuffer: () => Promise.resolve(r.body instanceof Uint8Array
+        ? r.body.buffer.slice(r.body.byteOffset, r.body.byteOffset + r.body.byteLength)
+        : new TextEncoder().encode(String(r.body ?? '')).buffer),
       text: () => Promise.resolve(typeof r.body === 'string' ? r.body : JSON.stringify(r.body ?? {})),
-      arrayBuffer: () => Promise.resolve(new TextEncoder().encode(String(r.body ?? '')).buffer),
       headers: { get: (k: string) => headers[k] ?? headers[k.toLowerCase()] ?? null },
     });
   });
@@ -1965,3 +1991,163 @@ describe('file size limit', () => {
     expect(file).toMatchObject({ size_bytes: 10, download_url: 'https://wiki.example.com/bin/download/Main/WebHome/a.pdf' });
   });
 });
+describe('0.16 fixes', () => {
+  const query = (refs: string[]) => ({ body: { searchResults: refs.map(r => ({ pageFullName: r })) } });
+  const versioned = (version: string, title = 'T') => ({ body: { title, content: '', syntax: 'xwiki/2.1', version, xwikiAbsoluteUrl: 'u' } });
+
+  function moveFetch(versionAfter: string, lateRefs: string[] = []) {
+    let moved = false;
+    return statefulFetch({
+      'GET /spaces/Docs/spaces/Guides/pages/Setup': () => (moved ? { status: 404 } : versioned('1.1', 'Setup')),
+      'GET /spaces/Docs/spaces/Guides/pages/Install': () => (moved ? versioned('2.1', 'Setup') : { status: 404 }),
+      'GET /spaces/Docs/pages/Index': () => versioned(moved ? versionAfter : '4.1'),
+      'GET /query': () => query(moved ? ['Docs.Index', ...lateRefs] : ['Docs.Index', 'Docs.Guides.Setup']),
+      'GET ': { body: {} },
+      'POST /bin/view/Docs/Guides/Setup': () => {
+        moved = true;
+        return { status: 302, headers: { location: '/bin/view/Docs/Guides/Setup?xpage=rename&renameId=1' } };
+      },
+    });
+  }
+
+  it('move_page reports links as updated when each linking page got a new version', async () => {
+    const fetch = moveFetch('5.1');
+    vi.stubGlobal('fetch', fetch);
+    const result = await new XWikiClient().movePage('Docs.Guides', 'Setup', 'Docs.Guides', 'Install');
+    expect(result).toMatchObject({ links_updated: true, backlinks_found: 1 });
+    expect(result.links_not_updated).toBeUndefined();
+    const q = new URL(fetch.mock.calls.find(c => String(c[0]).includes('/query'))![0]).searchParams;
+    expect(q.get('type')).toBe('solr');
+    expect(q.get('q')).toBe('links_extended:"entity:document:xwiki:Docs.Guides.Setup"');
+  });
+
+  it('move_page names linking pages the wiki did not rewrite, and ones indexed late', async () => {
+    vi.stubGlobal('fetch', moveFetch('4.1', ['Docs.Late']));
+    const result = await new XWikiClient().movePage('Docs.Guides', 'Setup', 'Docs.Guides', 'Install');
+    expect(result).toMatchObject({ links_updated: false, backlinks_found: 1, links_not_updated: ['Docs.Index', 'Docs.Late'] });
+  });
+
+  it('move_page with update_links false checks nothing', async () => {
+    const fetch = moveFetch('4.1');
+    vi.stubGlobal('fetch', fetch);
+    const result = await new XWikiClient().movePage('Docs.Guides', 'Setup', 'Docs.Guides', 'Install', { updateLinks: false });
+    expect(result.links_updated).toBe(false);
+    expect(result.backlinks_found).toBeUndefined();
+    expect(fetch.mock.calls.some(c => String(c[0]).includes('/query'))).toBe(false);
+  });
+
+  it('copy_page sends the source title when no new title is given', async () => {
+    let copied = false;
+    const fetch = statefulFetch({
+      'GET ': { body: {} },
+      'GET /spaces/Docs/spaces/Guides/pages/WebHome': versioned('1.1', 'Guides'),
+      'GET /spaces/Docs/spaces/Manuals/pages/WebHome': () => (copied ? versioned('1.1', 'Guides') : { status: 404 }),
+      'POST /bin/view/Docs/Guides/WebHome': () => { copied = true; return { status: 302, headers: { location: '/bin/view/Docs/Guides/?xpage=copy&copyId=1' } }; },
+    });
+    vi.stubGlobal('fetch', fetch);
+    await new XWikiClient().copyPage('Docs.Guides', 'WebHome', 'Docs.Manuals', 'WebHome');
+    expect(formOf(fetch).targetPageTitle).toBe('Guides');
+  });
+
+  it('export_page html returns the page HTML and leaves out the skin files', async () => {
+    const { deflateRawSync } = await import('node:zlib');
+    const zip = makeZip([
+      { name: 'pages/xwiki/Main/WebHome.html', data: Buffer.from('<p>Hello</p>'), deflate: true },
+      { name: 'skins/flamingo/style.css', data: Buffer.from('body{}') },
+      { name: 'webjars/lib.js', data: Buffer.from('x') },
+    ], deflateRawSync);
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET ': { body: {} },
+      'POST /bin/export/Main/WebHome': { body: zip, headers: { 'content-type': 'application/zip' } },
+    }));
+    const result = await new XWikiClient().exportPage('Main', 'WebHome', 'html');
+    expect(result.pages).toEqual([{ path: 'pages/xwiki/Main/WebHome.html', html: '<p>Hello</p>' }]);
+    expect(result.files_omitted).toBe(2);
+    expect(result.content_base64).toBeUndefined();
+  });
+
+  it('lists attachment versions newest first', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /spaces/Main/pages/WebHome/attachments/a.png/history': { body: { attachments: [{ version: '1.2' }, { version: '1.10' }, { version: '1.1' }] } },
+    }));
+    const versions = await new XWikiClient().getAttachmentHistory('Main', 'WebHome', 'a.png');
+    expect(versions.map(v => v.version)).toEqual(['1.10', '1.2', '1.1']);
+  });
+
+  it('reports the history of a missing page as not found', async () => {
+    vi.stubGlobal('fetch', statefulFetch({ 'GET /spaces/Main/pages/Nope/history': { body: { historySummaries: [] } } }));
+    await expect(new XWikiClient().getPageHistory('Main', 'Nope')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('leaves the empty "no right" entry out of required rights', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /spaces/Main/pages/WebHome/requiredRights': { body: { availableRights: [{ right: '', scope: 'DOCUMENT', definitelyRequiredRight: true, hasRight: true }] } },
+    }));
+    const report = await new XWikiClient().getRequiredRights('Main', 'WebHome');
+    expect(report.needed).toEqual([]);
+  });
+
+  it('omits an empty headline', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /classes/Sandbox.Code.ExampleClass/objects': { body: { objectSummaries: [{ number: 0, space: 'Main', pageName: 'WebHome', headline: null }] } },
+    }));
+    const { objects } = await new XWikiClient().listClassObjects('Sandbox.Code.ExampleClass', 0, 1, 'page', false);
+    expect('headline' in objects[0] && objects[0].headline !== undefined).toBe(false);
+  });
+
+  it('returns ISO dates for comments, attachments and pages', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /spaces/Main/pages/WebHome/comments': { body: { comments: [{ id: 0, date: '1700000000000', text: 'x' }] } },
+      'GET /spaces/Main/pages/WebHome/attachments': { body: { attachments: [{ name: 'a', date: '1700000000000' }] } },
+      'GET /spaces/Main/pages/WebHome': { body: { title: 'T', modified: 1700000000000 } },
+    }));
+    const client = new XWikiClient();
+    const iso = new Date(1700000000000).toISOString();
+    expect((await client.getComments('Main', 'WebHome'))[0].date).toBe(iso);
+    expect((await client.getAttachments('Main', 'WebHome'))[0].date).toBe(iso);
+    expect((await client.getPage('Main', 'WebHome')).modified_date).toBe(iso);
+  });
+
+  it('passes XWiki\'s reason for a rejected query through', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      'GET /query': { status: 400, body: 'Query type [xwql] is not allowed. Allowed query types are: [solr].' },
+    }));
+    await expect(new XWikiClient().advancedSearch("where doc.space = 'Main'", 'xwql'))
+      .rejects.toThrow('Query type [xwql] is not allowed');
+  });
+});
+
+/** Build a zip (stored or deflated entries) for export tests. */
+function makeZip(entries: Array<{ name: string; data: Buffer; deflate?: boolean }>, deflate: (b: Buffer) => Buffer): Uint8Array {
+  const local: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const e of entries) {
+    const body = e.deflate ? deflate(e.data) : e.data;
+    const name = Buffer.from(e.name);
+    const head = Buffer.alloc(30);
+    head.writeUInt32LE(0x04034b50, 0);
+    head.writeUInt16LE(e.deflate ? 8 : 0, 8);
+    head.writeUInt32LE(body.length, 18);
+    head.writeUInt32LE(e.data.length, 22);
+    head.writeUInt16LE(name.length, 26);
+    local.push(head, name, body);
+    const dir = Buffer.alloc(46);
+    dir.writeUInt32LE(0x02014b50, 0);
+    dir.writeUInt16LE(e.deflate ? 8 : 0, 10);
+    dir.writeUInt32LE(body.length, 20);
+    dir.writeUInt32LE(e.data.length, 24);
+    dir.writeUInt16LE(name.length, 28);
+    dir.writeUInt32LE(offset, 42);
+    central.push(dir, name);
+    offset += 30 + name.length + body.length;
+  }
+  const dirBuf = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(dirBuf.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return new Uint8Array(Buffer.concat([...local, dirBuf, end]));
+}

@@ -85,10 +85,14 @@ XWIKI_MCP_LOG_CALLS     # One JSON line per call on stderr (default: true)
 - **Object properties:** Write them as a form body (`property#name=value`); XML property bodies are accepted but not saved
 - **Classes:** The list endpoint returns `clazzs`; property attributes (e.g. StaticList `values`) come as `[{name, value}]`
 - **Action URLs:** `render_page`, `export_page`, `rollback_page`, `move_page` (`?xpage=rename&step=2`), `copy_page` (`?xpage=copy`), `move_attachment` (`?xpage=attachment/move`), `restore_deleted_page` (`/bin/undelete/`), `list_deleted_pages` (`XWiki.DeletedDocumentsJSON`) and the class editing tools (`/bin/propupdate`, `/bin/propadd`, `/bin/propdisable`, `/bin/propenable`; fields `{property}_{attribute}` and `form_token`) use `/bin/…` action URLs, not REST
-
-Mocked tests cannot prove a write is saved. Add a live test for every write or `/bin/` action tool in `src/integration/live.itest.ts`; CI runs it against XWiki LTS and stable.
 - **REST query types:** since XWiki 17.10.5 / 18.2 REST queries allow only `solr` unless `rest.allowedQueryTypes` is set; XWQL / HQL fail with a 400 that says so.
 - **Link refactoring:** `move_page`'s `updateLinks` rewrites typed links (`[[doc:A.B]]`) but XWiki leaves untyped `[[A.B]]` links as they are.
+
+## Testing
+
+Mocked tests cannot prove a write is saved. Add a live test for every write or `/bin/` action tool in `src/integration/live.itest.ts`; CI runs it against XWiki LTS and stable.
+
+`TESTING.md` is the SSOT for testing a deployment against a real wiki: stop if the deployment is not the latest release or a fix is still waiting outside `master`; write only in an empty throwaway space; create fixtures only in the plan's order; read back every write. It also says how to fix a failure: an issue in this repo, a fix with unit and live tests, merged to `master` in the same cycle, released, then retested. Issues and epics for this tool live in this repo, written generically. Anything specific to one wiki stays in the deployer's private tracker.
 
 ## Tool Response Format
 
@@ -103,6 +107,7 @@ Mocked tests cannot prove a write is saved. Add a live test for every write or `
 
 | HTTP Status | Message |
 |---|---|
+| 400 | `"XWiki rejected the request (400): {reason from XWiki}. URL: {url}"` |
 | 404 | `"Page not found: {space}/{page}"` |
 | 401/403 | `"Authentication failed. Check XWIKI_AUTH_TYPE and credentials."` |
 | 500 | `"XWiki server error: {status}. URL: {url}"` |
