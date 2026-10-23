@@ -8,7 +8,9 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_update_object',
     {
       description:
-        'Update properties of an existing XObject on a page. Only the supplied properties are modified — unspecified properties retain their current values.',
+        'Update properties of an existing XObject on a page. Each supplied property\'s whole value is replaced; ' +
+        'unspecified properties retain their current values. ' +
+        'To change only part of a long property value (e.g. a few lines of code), use xwiki_replace_in_page instead.',
       inputSchema: z.object({
         space: z.string().describe('Space name in dot notation (e.g. "Main" or "Docs.Guides")'),
         page: z.string().describe('Page name (e.g. "WebHome")'),

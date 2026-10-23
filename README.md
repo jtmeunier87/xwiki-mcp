@@ -15,7 +15,7 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 | Category | Count | Tools |
 |---|---|---|
 | **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_list_page_children`, `xwiki_get_page_tree`, `xwiki_find_pages`, `xwiki_get_required_rights` |
-| **Pages (Write)** | 6 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_edit_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_delete_page` |
+| **Pages (Write)** | 6 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_delete_page` |
 | **Recycle Bin** | 2 | `xwiki_list_deleted_pages`, `xwiki_restore_deleted_page` |
 | **Comments** | 4 | `xwiki_list_comments`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_delete_comment` |
 | **Attachments** | 7 | `xwiki_list_attachments`, `xwiki_search_attachments`, `xwiki_list_attachment_versions`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_move_attachment`, `xwiki_delete_attachment` |
@@ -130,7 +130,7 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 | Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 53 |
 | Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 31 read tools |
 
-Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_edit_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_deleted_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
+Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_deleted_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
 
 `XWIKI_MCP_TOOLSETS` and `XWIKI_MCP_DISABLED_TOOLS` remove further tools from whichever mode is set; they never add any. Fewer tools help a model pick the right one, so register only the toolsets a deployment needs.
 
@@ -173,9 +173,9 @@ Analyse which rights a page's content needs (script or programming right for Vel
 Create a new page with title, content, optional parent, and optional syntax.
 
 #### `xwiki_update_page`
-Update an existing page. Fetches current version first to preserve fields not specified.
+Update an existing page by replacing its whole content, its title, or both. Fetches current version first to preserve fields not specified. To change only part of the content, use `xwiki_replace_in_page`.
 
-#### `xwiki_edit_page`
+#### `xwiki_replace_in_page`
 Targeted edit: replace exact pieces of text in a page's content, or in one object property (`class_name`, `object_number`, `property`, e.g. the `code` of a `XWiki.JavaScriptExtension`), without sending the whole text. Made for code on long pages, such as Velocity or Groovy sheets. `edits` is a list of `{old_text, new_text}` applied in order; each `old_text` must occur exactly once (whitespace and line breaks included), and nothing is saved unless every edit matches. `expected_version` refuses the edit if the page has changed since that version was read. The saved text is read back and compared; the result gives the old and new version, the size before and after, and the line of each change. Saving script content still needs the rights the scripts need (`xwiki_get_required_rights`).
 
 #### `xwiki_move_page`
@@ -289,7 +289,7 @@ List the objects of one class across the whole wiki with the page each one is on
 Create a new XObject on a page with class name and property key-value map.
 
 #### `xwiki_update_object`
-Update properties of an existing object. Only specified properties are changed.
+Update properties of an existing object. Only specified properties are changed, each to the whole value given. To change only part of a long value (e.g. a few lines of code), use `xwiki_replace_in_page`.
 
 #### `xwiki_delete_object`
 Delete an object by class name and number. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
@@ -385,7 +385,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
-- [x] v0.20.0 — `xwiki_edit_page`: targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving
+- [x] v0.20.0 — `xwiki_replace_in_page` (named `xwiki_edit_page` before release): targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving
 - [x] v0.19.0 — Fixes from a second live test: `xwiki_search_pages` honours `space` (the wiki-wide search ignored it); `xwiki_compare_page_versions` gives the current version its own date and author; `xwiki_list_page_objects` returns property values (`include_properties`); HTML export returns each page's content area, not the whole skin page; a missing page's history says "Page not found"; `xwiki_move_page` no longer says Page properties are never rewritten (it depends on the XWiki version)
 - [x] v0.18.0 — Fixes from a live test: `xwiki_move_page` checks that links were rewritten (`backlinks_found`, `links_not_updated`); copy and move keep the title; HTML export returns the page HTML, not a multi-MB zip; attachment versions newest first; history of a missing page is not found; dates are ISO strings everywhere; empty headline and empty required-right entries left out; upload URL without a stale `rev`; a rejected request (400) carries XWiki's reason; `xwiki_list_classes` honours `start` / `limit` (XWiki returns every class); `xwiki_list_recent_changes` names the page of each change
 - [x] v0.17.0 — MCP TypeScript SDK v2: protocol 2026-07-28 (no handshake or sessions, header-validated HTTP requests, cacheable tool list), with 2025-era clients that open with `initialize` (e.g. supergateway) still served
