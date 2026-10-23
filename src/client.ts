@@ -830,6 +830,8 @@ export class XWikiClient {
     const maxPages = options.maxPages ?? 500;
     const includeObjects = options.includeObjects ?? true;
     const root = `${space}.${page}`;
+    // The root page itself: its row is returned as root_page (and a missing root fails with 404 here).
+    const rootDoc = await this.getPage(space, page);
 
     interface Entry { node: PageTreeNode; space: string; page: string; children: string[] }
     const entries = new Map<string, Entry>();
@@ -873,10 +875,19 @@ export class XWikiClient {
       frontier = next;
     }
 
+    const rootNode: PageTreeNode = {
+      reference: root,
+      title: rootDoc.title?.trim() || (page === 'WebHome' ? space.slice(space.lastIndexOf('.') + 1) : page),
+      level: 0,
+      parent: rootDoc.parent ?? '',
+      child_count: rootChildren.length,
+      url: rootDoc.url,
+    };
+
     let classTotals: Record<string, number> | undefined;
     if (includeObjects) {
       classTotals = {};
-      const list = [...entries.values()];
+      const list = [{ node: rootNode, space, page }, ...entries.values()];
       const objects = await this.mapLimit(list, 6, e => this.listObjects(e.space, e.page));
       list.forEach((e, i) => {
         const classes: Record<string, number> = {};
@@ -899,6 +910,7 @@ export class XWikiClient {
 
     return {
       root,
+      root_page: rootNode,
       hierarchy,
       max_depth: maxDepth,
       total_pages: pages.length,

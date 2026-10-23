@@ -74,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.20.1
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.21.0
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
@@ -159,7 +159,7 @@ Get page content, title, syntax, author, version and parent. Long content comes 
 Get immediate child pages of a given page.
 
 #### `xwiki_get_page_tree`
-Report the whole page tree under a root page in one call. Each descendant comes back with its reference, title, level (1 = direct child), parent, direct child count, URL and the object classes attached to it with a count per class; `class_totals` counts the pages carrying each class. Rows are depth-first. `hierarchy` is `parentchild` (the page's parent field, xWiki's REST default) or `nestedpages` (page/space nesting). `max_depth` (default 50) and `max_pages` (default 500, `truncated: true` when reached) bound the walk; `include_objects: false` skips the class listing. Costs one REST request per page for children plus one per page for objects, a few in parallel.
+Report the whole page tree under a root page in one call. `root_page` is the root's own row (level 0) with its object classes, so a root carrying an object (e.g. an SOP page) is never missed. Each descendant comes back with its reference, title, level (1 = direct child), parent, direct child count, URL and the object classes attached to it with a count per class; `class_totals` counts the pages carrying each class, the root included. Rows are depth-first. `hierarchy` is `parentchild` (the page's parent field, xWiki's REST default) or `nestedpages` (page/space nesting). `max_depth` (default 50) and `max_pages` (default 500, `truncated: true` when reached) bound the walk; `include_objects: false` skips the class listing. Costs one REST request per page for children plus one per page for objects, a few in parallel.
 
 #### `xwiki_find_pages`
 Find pages wiki-wide by name, space, and/or author — without needing to know the exact space. Deduplicates results automatically. At least one filter required.
@@ -385,6 +385,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.21.0 — `xwiki_get_page_tree` returns `root_page`: the root page's own row with its object classes (before, only descendants were reported, so the root's objects were never listed); `class_totals` includes the root
 - [x] v0.20.1 — `xwiki_replace_in_page` (first released version; a `v0.20.0` tag was pushed early on the 0.19.0 code and is not a release): targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving
 - [x] v0.19.0 — Fixes from a second live test: `xwiki_search_pages` honours `space` (the wiki-wide search ignored it); `xwiki_compare_page_versions` gives the current version its own date and author; `xwiki_list_page_objects` returns property values (`include_properties`); HTML export returns each page's content area, not the whole skin page; a missing page's history says "Page not found"; `xwiki_move_page` no longer says Page properties are never rewritten (it depends on the XWiki version)
 - [x] v0.18.0 — Fixes from a live test: `xwiki_move_page` checks that links were rewritten (`backlinks_found`, `links_not_updated`); copy and move keep the title; HTML export returns the page HTML, not a multi-MB zip; attachment versions newest first; history of a missing page is not found; dates are ISO strings everywhere; empty headline and empty required-right entries left out; upload URL without a stale `rev`; a rejected request (400) carries XWiki's reason; `xwiki_list_classes` honours `start` / `limit` (XWiki returns every class); `xwiki_list_recent_changes` names the page of each change
