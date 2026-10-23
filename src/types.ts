@@ -408,3 +408,28 @@ export interface RollbackResult {
   new_version?: string;
   status: 'rolled_back';
 }
+
+export interface PageTreeNode {
+  reference: string;
+  title: string;
+  /** 1 = direct child of the root */
+  level: number;
+  parent: string;
+  child_count: number;
+  url: string;
+  /** Object class name -> number of objects of that class on the page */
+  classes?: Record<string, number>;
+}
+
+export interface PageTree {
+  root: string;
+  hierarchy: 'parentchild' | 'nestedpages';
+  max_depth: number;
+  total_pages: number;
+  /** True when max_pages stopped the walk before the whole tree was read */
+  truncated: boolean;
+  /** Class name -> number of pages in the tree carrying at least one object of it */
+  class_totals?: Record<string, number>;
+  /** Depth-first order, each page followed by its descendants */
+  pages: PageTreeNode[];
+}

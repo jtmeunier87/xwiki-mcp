@@ -14,6 +14,7 @@ import { register as registerGetPage } from './tools/get-page.js';
 import { register as registerSearch } from './tools/search.js';
 import { register as registerGetAttachments } from './tools/get-attachments.js';
 import { register as registerGetPageChildren } from './tools/get-page-children.js';
+import { register as registerGetPageTree } from './tools/get-page-tree.js';
 
 // Write tools (Phase 1)
 import { register as registerCreatePage } from './tools/create-page.js';
@@ -71,6 +72,7 @@ const TOOLS: Array<[Access, Register]> = [
   ['read', registerGetPage],
   ['read', registerSearch],
   ['read', registerGetPageChildren],
+  ['read', registerGetPageTree],
   ['write', registerCreatePage],
   ['write', registerUpdatePage],
   ['delete', registerDeletePage],

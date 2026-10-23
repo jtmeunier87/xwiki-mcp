@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode } from './types.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -770,6 +770,144 @@ export class XWikiClient {
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/objects/${encodeURIComponent(className)}/${objectNumber}`;
     await this.mutate('DELETE', path);
     return { status: 'deleted' };
+  }
+
+  /**
+   * Walk the page tree under a root page and report each descendant with its
+   * level, direct child count and (optionally) the object classes it carries.
+   * Endpoints: GET .../pages/{pg}/children?hierarchy=... (paged) and
+   * GET .../pages/{pg}/objects, one each per page, run a few at a time.
+   * hierarchy 'parentchild' follows the page's parent field (XWiki's REST default);
+   * 'nestedpages' follows the page/space nesting.
+   */
+  async getPageTree(
+    space: string,
+    page: string,
+    options: { hierarchy?: 'parentchild' | 'nestedpages'; maxDepth?: number; maxPages?: number; includeObjects?: boolean } = {},
+  ): Promise<PageTree> {
+    const hierarchy = options.hierarchy ?? 'parentchild';
+    const maxDepth = options.maxDepth ?? 50;
+    const maxPages = options.maxPages ?? 500;
+    const includeObjects = options.includeObjects ?? true;
+    const root = `${space}.${page}`;
+
+    interface Entry { node: PageTreeNode; space: string; page: string; children: string[] }
+    const entries = new Map<string, Entry>();
+    const visited = new Set<string>([root]);
+    const rootChildren: string[] = [];
+    let truncated = false;
+
+    // Level by level: fetch children of every page on the current level.
+    let frontier: Array<{ ref: string; space: string; page: string; level: number; children: string[] }> =
+      [{ ref: root, space, page, level: 0, children: rootChildren }];
+    while (frontier.length > 0) {
+      const results = await this.mapLimit(frontier, 6, f => this.getAllChildren(f.space, f.page, hierarchy));
+      const next: typeof frontier = [];
+      frontier.forEach((f, i) => {
+        const kids = results[i];
+        if (f.level > 0) entries.get(f.ref)!.node.child_count = kids.length;
+        if (f.level >= maxDepth) return;
+        for (const k of kids) {
+          const ref = k.fullName ?? k.id;
+          if (visited.has(ref)) continue;
+          if (entries.size >= maxPages) { truncated = true; break; }
+          visited.add(ref);
+          const loc = this.splitReference(ref, k);
+          const children: string[] = [];
+          entries.set(ref, {
+            node: {
+              reference: ref,
+              title: this.treeTitle(k, loc),
+              level: f.level + 1,
+              parent: f.ref,
+              child_count: 0,
+              url: k.xwikiAbsoluteUrl ?? '',
+            },
+            ...loc,
+            children,
+          });
+          f.children.push(ref);
+          next.push({ ref, ...loc, level: f.level + 1, children });
+        }
+      });
+      frontier = next;
+    }
+
+    let classTotals: Record<string, number> | undefined;
+    if (includeObjects) {
+      classTotals = {};
+      const list = [...entries.values()];
+      const objects = await this.mapLimit(list, 6, e => this.listObjects(e.space, e.page));
+      list.forEach((e, i) => {
+        const classes: Record<string, number> = {};
+        for (const o of objects[i]) classes[o.class_name] = (classes[o.class_name] ?? 0) + 1;
+        e.node.classes = classes;
+        for (const c of Object.keys(classes)) classTotals![c] = (classTotals![c] ?? 0) + 1;
+      });
+    }
+
+    // Depth-first order, as a tree reads.
+    const pages: PageTreeNode[] = [];
+    const walk = (refs: string[]) => {
+      for (const ref of refs) {
+        const e = entries.get(ref)!;
+        pages.push(e.node);
+        walk(e.children);
+      }
+    };
+    walk(rootChildren);
+
+    return {
+      root,
+      hierarchy,
+      max_depth: maxDepth,
+      total_pages: pages.length,
+      truncated,
+      ...(classTotals ? { class_totals: classTotals } : {}),
+      pages,
+    };
+  }
+
+  /** All children of one page, following the REST paging (start/number). */
+  private async getAllChildren(space: string, page: string, hierarchy: string): Promise<XWikiPageSummaryRaw[]> {
+    const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}/children`;
+    const pageSize = 500;
+    const all: XWikiPageSummaryRaw[] = [];
+    for (let start = 0; ; start += pageSize) {
+      const data = await this.get<XWikiPagesResponse>(path, { hierarchy, start, number: pageSize });
+      const batch = data.pageSummaries ?? [];
+      all.push(...batch);
+      if (batch.length < pageSize) return all;
+    }
+  }
+
+  /** Space and page name of a child summary, falling back to splitting its full name. */
+  private splitReference(ref: string, p: XWikiPageSummaryRaw): { space: string; page: string } {
+    if (p.space && p.name) return { space: p.space, page: p.name };
+    const i = ref.lastIndexOf('.');
+    return { space: ref.slice(0, i), page: ref.slice(i + 1) };
+  }
+
+  /** Stored title, else page name, else the space name for a WebHome page. */
+  private treeTitle(p: XWikiPageSummaryRaw, loc: { space: string; page: string }): string {
+    const title = p.title?.trim();
+    if (title) return title;
+    if (loc.page === 'WebHome') return loc.space.slice(loc.space.lastIndexOf('.') + 1);
+    return loc.page;
+  }
+
+  /** Map over items with at most `limit` requests in flight, keeping order. */
+  private async mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await fn(items[i]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
   }
 
   // ---------------------------------------------------------------------------

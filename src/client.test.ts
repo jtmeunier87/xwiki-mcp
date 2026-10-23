@@ -1329,3 +1329,87 @@ describe('class editing', () => {
     await expect(new XWikiClient().addClassProperty('Sandbox.Code.ExampleClass', 'dueDate', 'Date')).rejects.toThrow('already exists');
   });
 });
+
+// ---------------------------------------------------------------------------
+// getPageTree
+// ---------------------------------------------------------------------------
+
+describe('getPageTree', () => {
+  // Docs.Guides.WebHome -> Setup (-> Install), Usage
+  const children: Record<string, unknown[]> = {
+    '/spaces/Docs/spaces/Guides/pages/WebHome/children': [
+      { id: 'xwiki:Docs.Guides.Setup', fullName: 'Docs.Guides.Setup', space: 'Docs.Guides', name: 'Setup', title: 'Setup', xwikiAbsoluteUrl: 'https://wiki.example.com/Setup' },
+      { id: 'xwiki:Docs.Guides.Usage', fullName: 'Docs.Guides.Usage', space: 'Docs.Guides', name: 'Usage', title: '', xwikiAbsoluteUrl: 'https://wiki.example.com/Usage' },
+    ],
+    '/spaces/Docs/spaces/Guides/pages/Setup/children': [
+      { id: 'xwiki:Docs.Guides.Install', fullName: 'Docs.Guides.Install', space: 'Docs.Guides', name: 'Install', title: 'Install' },
+      // A cycle back to the root is ignored
+      { id: 'xwiki:Docs.Guides.WebHome', fullName: 'Docs.Guides.WebHome', space: 'Docs.Guides', name: 'WebHome', title: 'Guides' },
+    ],
+  };
+  const objects: Record<string, unknown[]> = {
+    '/spaces/Docs/spaces/Guides/pages/Setup/objects': [
+      { className: 'XWiki.TagClass', number: 0 },
+      { className: 'Sandbox.Code.ExampleClass', number: 0 },
+      { className: 'Sandbox.Code.ExampleClass', number: 1 },
+    ],
+    '/spaces/Docs/spaces/Guides/pages/Install/objects': [
+      { className: 'Sandbox.Code.ExampleClass', number: 0 },
+    ],
+  };
+
+  function treeFetch() {
+    return vi.fn().mockImplementation((url: string) => {
+      const path = new URL(url).pathname.replace('/rest/wikis/xwiki', '');
+      const body = path.endsWith('/children')
+        ? { pageSummaries: children[path] ?? [] }
+        : { objectSummaries: objects[path] ?? [] };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body), headers: { get: () => null } });
+    });
+  }
+
+  it('returns descendants depth-first with levels, child counts and classes', async () => {
+    const fetch = treeFetch();
+    vi.stubGlobal('fetch', fetch);
+
+    const tree = await new XWikiClient().getPageTree('Docs.Guides', 'WebHome');
+
+    expect(tree.root).toBe('Docs.Guides.WebHome');
+    expect(tree.total_pages).toBe(3);
+    expect(tree.truncated).toBe(false);
+    expect(tree.pages.map(p => [p.reference, p.level, p.child_count])).toEqual([
+      ['Docs.Guides.Setup', 1, 2],
+      ['Docs.Guides.Install', 2, 0],
+      ['Docs.Guides.Usage', 1, 0],
+    ]);
+    expect(tree.pages[0].classes).toEqual({ 'XWiki.TagClass': 1, 'Sandbox.Code.ExampleClass': 2 });
+    expect(tree.pages[2].title).toBe('Usage');
+    expect(tree.pages[2].classes).toEqual({});
+    expect(tree.class_totals).toEqual({ 'XWiki.TagClass': 1, 'Sandbox.Code.ExampleClass': 2 });
+
+    const url: string = fetch.mock.calls[0][0];
+    expect(url).toContain('hierarchy=parentchild');
+  });
+
+  it('honours max_depth, max_pages, hierarchy and include_objects', async () => {
+    const fetch = treeFetch();
+    vi.stubGlobal('fetch', fetch);
+    const client = new XWikiClient();
+
+    const shallow = await client.getPageTree('Docs.Guides', 'WebHome', { maxDepth: 1, includeObjects: false });
+    expect(shallow.pages.map(p => p.reference)).toEqual(['Docs.Guides.Setup', 'Docs.Guides.Usage']);
+    expect(shallow.pages[0].child_count).toBe(2);
+    expect(shallow.class_totals).toBeUndefined();
+    expect(fetch.mock.calls.some(c => String(c[0]).includes('/objects'))).toBe(false);
+
+    const capped = await client.getPageTree('Docs.Guides', 'WebHome', { maxPages: 1, hierarchy: 'nestedpages' });
+    expect(capped.total_pages).toBe(1);
+    expect(capped.truncated).toBe(true);
+    expect(fetch.mock.calls.some(c => String(c[0]).includes('hierarchy=nestedpages'))).toBe(true);
+  });
+
+  it('throws 404 when the root page does not exist', async () => {
+    vi.stubGlobal('fetch', mockFetch({}, 404));
+    await expect(new XWikiClient().getPageTree('Docs', 'Missing')).rejects.toMatchObject({ status: 404 });
+  });
+});

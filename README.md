@@ -8,11 +8,11 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 36 tools across 7 categories
+## 37 tools across 7 categories
 
 | Category | Count | Tools |
 |---|---|---|
-| **Pages (Read)** | 5 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_search` |
+| **Pages (Read)** | 6 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_get_page_children`, `xwiki_get_page_tree`, `xwiki_search` |
 | **Pages (Write) & Comments** | 5 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_delete_page`, `xwiki_add_comment`, `xwiki_get_comments` |
 | **Attachments** | 4 | `xwiki_get_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
 | **Tags** | 2 | `xwiki_get_tags`, `xwiki_add_tags` |
@@ -81,9 +81,9 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 
 | Mode | Settings | Tools |
 |---|---|---|
-| Read/write, no delete (default) | — | 33: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
-| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 36 |
-| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 23 read tools |
+| Read/write, no delete (default) | — | 34: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment` |
+| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 37 |
+| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 24 read tools |
 
 Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_add_comment`, `xwiki_upload_attachment`, `xwiki_add_tags`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
 
@@ -106,6 +106,9 @@ Get full page content, syntax, author, version, and parent link.
 
 #### `xwiki_get_page_children`
 Get immediate child pages of a given page.
+
+#### `xwiki_get_page_tree`
+Report the whole page tree under a root page in one call. Each descendant comes back with its reference, title, level (1 = direct child), parent, direct child count, URL and the object classes attached to it with a count per class; `class_totals` counts the pages carrying each class. Rows are depth-first. `hierarchy` is `parentchild` (the page's parent field, xWiki's REST default) or `nestedpages` (page/space nesting). `max_depth` (default 50) and `max_pages` (default 500, `truncated: true` when reached) bound the walk; `include_objects: false` skips the class listing. Costs one REST request per page for children plus one per page for objects, a few in parallel.
 
 #### `xwiki_search`
 Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
@@ -238,7 +241,7 @@ git clone https://github.com/jtmeunier87/xwiki-mcp
 cd xwiki-mcp
 npm install
 npm run build
-npm test        # 78 unit tests (mocked fetch)
+npm test        # 86 unit tests (mocked fetch)
 ```
 
 ---
@@ -253,6 +256,7 @@ npm test        # 78 unit tests (mocked fetch)
 - [x] v0.6.0–v0.9.0 — Streamable HTTP transport, `xwiki_` tool prefix, Docker image, object write fix, page rollback
 - [x] v0.10.0 — Read-only / no-delete access modes, class property attributes in `xwiki_get_class`
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
+- [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [ ] Future — Translation management, attachment versioning, jobs API (when genuinely needed)
 
 ---
