@@ -21,7 +21,7 @@ This file covers both levels: the rules for the live test, the order its steps r
    - The session was started after the deployment, so the client loaded the current tool list.
 
    If any of these fails, **stop**. Don't test an old build. Report what is out of date, then merge, release and redeploy first.
-2. **One throwaway space, empty at the start.** The deployer names it, for example `Sandbox.MCPTest`. Before step 1, `xwiki_list_pages` on it must return nothing. If it holds pages, stop and ask: never reuse or clean up someone else's pages.
+2. **One throwaway space, empty at the start.** The deployer names it, for example `Sandbox.LiveTest`. Before step 1, `xwiki_list_pages` on it must return nothing. If it holds pages, stop and ask: never reuse or clean up someone else's pages.
 3. **Writes only in the throwaway space.** Every page, class, object, attachment and comment the test creates goes there. Reads elsewhere stay read-only, so pages outside the space are never changed. Never test a class change on a class that real data uses: the test makes its own class in the space.
 4. **Create pages only as the plan says.** Use only the fixture names in the plan, in its order, and don't add pages along the way. If a fixture step fails, stop: later steps depend on it. When an extra page is needed to narrow a failure down, name it in the report.
 5. **Read back every write.** A write passes only when a read call shows the saved values, not when the write call reports success.
