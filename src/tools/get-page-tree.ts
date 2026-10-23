@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { XWikiError } from '../client.js';
 import type { XWikiClient } from '../client.js';
 
@@ -16,14 +16,20 @@ hierarchy:
 - nestedpages: follows the page/space nesting (Docs.Guides.WebHome -> Docs.Guides.Setup.WebHome).
 
 The walk makes one request per page (plus one per page for objects), so large trees are capped by max_pages; truncated: true means the cap was reached. For direct children only, use xwiki_list_page_children.`,
-      inputSchema: {
+      inputSchema: z.object({
         space: z.string().describe('Space of the root page. Use dot notation for nested spaces: "Docs.Guides"'),
         page: z.string().describe('Root page name (e.g. "WebHome")'),
-        hierarchy: z.enum(['parentchild', 'nestedpages']).default('parentchild').describe('Which hierarchy to follow (default parentchild)'),
+        hierarchy: z
+          .enum(['parentchild', 'nestedpages'])
+          .default('parentchild')
+          .describe('Which hierarchy to follow (default parentchild)'),
         max_depth: z.number().int().min(1).max(50).default(50).describe('Levels below the root to include (default 50)'),
         max_pages: z.number().int().min(1).max(2000).default(500).describe('Stop after this many pages (default 500)'),
-        include_objects: z.boolean().default(true).describe('List the object classes on each page (one extra request per page; default true)'),
-      },
+        include_objects: z
+          .boolean()
+          .default(true)
+          .describe('List the object classes on each page (one extra request per page; default true)'),
+      }),
     },
     async ({ space, page, hierarchy, max_depth, max_pages, include_objects }) => {
       try {
@@ -35,9 +41,8 @@ The walk makes one request per page (plus one per page for objects), so large tr
         });
         return { content: [{ type: 'text', text: JSON.stringify(tree) }] };
       } catch (e) {
-        const msg = e instanceof XWikiError && e.status === 404
-          ? `Page not found: ${space}/${page}`
-          : e instanceof Error ? e.message : String(e);
+        const msg =
+          e instanceof XWikiError && e.status === 404 ? `Page not found: ${space}/${page}` : e instanceof Error ? e.message : String(e);
         return { content: [{ type: 'text', text: msg }], isError: true };
       }
     },

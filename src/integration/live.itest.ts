@@ -3,8 +3,8 @@
 // server (npm run build). Everything is written under a fresh space IT.Run<timestamp>.
 // CI starts the official XWiki Docker image for this (.github/workflows/integration.yml).
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { Client } from '@modelcontextprotocol/client';
 
 const URL_ = process.env.XWIKI_IT_URL ?? '';
 const RUN = `IT.Run${Date.now()}`;
@@ -17,15 +17,19 @@ type Content = Array<{ type: string; text?: string }>;
 
 /** Call a tool and return its JSON result; fail the test on a tool error. */
 async function call(name: string, args: Record<string, unknown> = {}): Promise<any> {
-  const r = await client.callTool({ name, arguments: args }) as { content: Content; isError?: boolean };
+  const r = (await client.callTool({ name, arguments: args })) as { content: Content; isError?: boolean };
   const text = r.content.find(c => c.type === 'text')?.text ?? '';
   if (r.isError) throw new Error(`${name} failed: ${text}`);
-  try { return JSON.parse(text); } catch { return { text, content: r.content }; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { text, content: r.content };
+  }
 }
 
 /** Call a tool that is expected to fail; return its error text. */
 async function callError(name: string, args: Record<string, unknown>): Promise<string> {
-  const r = await client.callTool({ name, arguments: args }) as { content: Content; isError?: boolean };
+  const r = (await client.callTool({ name, arguments: args })) as { content: Content; isError?: boolean };
   expect(r.isError).toBe(true);
   return r.content[0]?.text ?? '';
 }
@@ -39,7 +43,7 @@ describe.skipIf(!URL_)('live XWiki', () => {
       command: 'node',
       args: ['dist/index.js'],
       env: {
-        ...process.env as Record<string, string>,
+        ...(process.env as Record<string, string>),
         XWIKI_BASE_URL: URL_,
         XWIKI_USERNAME: process.env.XWIKI_IT_USER ?? 'superadmin',
         XWIKI_PASSWORD: process.env.XWIKI_IT_PASSWORD ?? '',
@@ -67,7 +71,12 @@ describe.skipIf(!URL_)('live XWiki', () => {
 
   it('copies and renames a terminal page', async () => {
     await page('Pages', 'Source');
-    const copy = await call('xwiki_copy_page', { space: `${RUN}.Pages`, page: 'Source', target_space: `${RUN}.Pages`, target_page: 'SourceCopy' });
+    const copy = await call('xwiki_copy_page', {
+      space: `${RUN}.Pages`,
+      page: 'Source',
+      target_space: `${RUN}.Pages`,
+      target_page: 'SourceCopy',
+    });
     expect(copy.status).toBe('copied');
     expect((await call('xwiki_get_page', { space: `${RUN}.Pages`, page: 'SourceCopy' })).content).toBe('Source');
 
@@ -79,7 +88,12 @@ describe.skipIf(!URL_)('live XWiki', () => {
   it('moves a nested page with its children', async () => {
     await call('xwiki_create_page', { space: `${RUN}.Nest`, page: 'WebHome', title: 'Nest', content: 'n' });
     await call('xwiki_create_page', { space: `${RUN}.Nest.Child`, page: 'WebHome', title: 'Child', content: 'c' });
-    const moved = await call('xwiki_move_page', { space: `${RUN}.Nest`, page: 'WebHome', target_space: `${RUN}.Moved`, target_page: 'WebHome' });
+    const moved = await call('xwiki_move_page', {
+      space: `${RUN}.Nest`,
+      page: 'WebHome',
+      target_space: `${RUN}.Moved`,
+      target_page: 'WebHome',
+    });
     expect(moved.children_moved).toBe(true);
     expect((await call('xwiki_get_page', { space: `${RUN}.Moved.Child`, page: 'WebHome' })).content).toBe('c');
     const tree = await call('xwiki_get_page_tree', { space: `${RUN}.Moved`, page: 'WebHome', hierarchy: 'nestedpages' });
@@ -99,18 +113,36 @@ describe.skipIf(!URL_)('live XWiki', () => {
   it('uploads, versions, downloads, moves and searches attachments', async () => {
     await page('Files', 'A');
     await page('Files', 'B');
-    await call('xwiki_upload_attachment', { space: `${RUN}.Files`, page: 'A', filename: 'dot.png', content_base64: PNG, mime_type: 'image/png' });
+    await call('xwiki_upload_attachment', {
+      space: `${RUN}.Files`,
+      page: 'A',
+      filename: 'dot.png',
+      content_base64: PNG,
+      mime_type: 'image/png',
+    });
     const listed = await call('xwiki_list_attachments', { space: `${RUN}.Files`, page: 'A' });
     expect(listed._pagination.total).toBe(1);
     const versions = await call('xwiki_list_attachment_versions', { space: `${RUN}.Files`, page: 'A', filename: 'dot.png' });
     expect(versions.versions.length).toBeGreaterThan(0);
 
-    const download = await client.callTool({ name: 'xwiki_download_attachment', arguments: { space: `${RUN}.Files`, page: 'A', filename: 'dot.png' } }) as { content: Content };
+    const download = (await client.callTool({
+      name: 'xwiki_download_attachment',
+      arguments: { space: `${RUN}.Files`, page: 'A', filename: 'dot.png' },
+    })) as { content: Content };
     expect(download.content[0].type).toBe('image');
 
-    const moved = await call('xwiki_move_attachment', { space: `${RUN}.Files`, page: 'A', filename: 'dot.png', target_space: `${RUN}.Files`, target_page: 'B', target_filename: 'moved.png' });
+    const moved = await call('xwiki_move_attachment', {
+      space: `${RUN}.Files`,
+      page: 'A',
+      filename: 'dot.png',
+      target_space: `${RUN}.Files`,
+      target_page: 'B',
+      target_filename: 'moved.png',
+    });
     expect(moved.status).toBe('moved');
-    expect((await call('xwiki_list_attachments', { space: `${RUN}.Files`, page: 'B' })).attachments.map((a: { name: string }) => a.name)).toEqual(['moved.png']);
+    expect(
+      (await call('xwiki_list_attachments', { space: `${RUN}.Files`, page: 'B' })).attachments.map((a: { name: string }) => a.name),
+    ).toEqual(['moved.png']);
   });
 
   it('edits classes and objects', async () => {
@@ -121,7 +153,13 @@ describe.skipIf(!URL_)('live XWiki', () => {
 
     await page('Data', 'Record');
     await call('xwiki_create_object', { space: `${RUN}.Data`, page: 'Record', class_name: cls, properties: { status: 'open' } });
-    await call('xwiki_update_object', { space: `${RUN}.Data`, page: 'Record', class_name: cls, object_number: 0, properties: { status: 'done' } });
+    await call('xwiki_update_object', {
+      space: `${RUN}.Data`,
+      page: 'Record',
+      class_name: cls,
+      object_number: 0,
+      properties: { status: 'done' },
+    });
     const all = await call('xwiki_list_class_objects', { class_name: cls });
     expect(all.objects).toHaveLength(1);
     expect(all.objects[0]).toMatchObject({ page: `${RUN}.Data.Record`, properties: { status: 'done' } });
@@ -132,7 +170,9 @@ describe.skipIf(!URL_)('live XWiki', () => {
     await call('xwiki_add_tags', { space: `${RUN}.Social`, page: 'Post', tags: ['a', 'b', 'c'] });
     expect((await call('xwiki_remove_tags', { space: `${RUN}.Social`, page: 'Post', tags: ['b'] })).tags).toEqual(['a', 'c']);
     const comment = await call('xwiki_add_comment', { space: `${RUN}.Social`, page: 'Post', text: 'first' });
-    expect((await call('xwiki_update_comment', { space: `${RUN}.Social`, page: 'Post', id: comment.id, text: 'edited' })).text).toBe('edited');
+    expect((await call('xwiki_update_comment', { space: `${RUN}.Social`, page: 'Post', id: comment.id, text: 'edited' })).text).toBe(
+      'edited',
+    );
   });
 
   it('compares and rolls back versions', async () => {
@@ -148,20 +188,29 @@ describe.skipIf(!URL_)('live XWiki', () => {
 
   it('renders and exports', async () => {
     expect((await call('xwiki_render_page', { space: `${RUN}.Moved.Child`, page: 'WebHome' })).text ?? '').toContain('c');
-    const xar = await client.callTool({ name: 'xwiki_export_page', arguments: { space: `${RUN}.Moved`, page: 'WebHome', format: 'xar', children: true } }) as { content: Content };
+    const xar = (await client.callTool({
+      name: 'xwiki_export_page',
+      arguments: { space: `${RUN}.Moved`, page: 'WebHome', format: 'xar', children: true },
+    })) as { content: Content };
     expect(xar.content[0].type).toBe('resource');
   });
 
   it('answers a solr query and reports a refused query type clearly', async () => {
     const solr = await call('xwiki_query', { query: 'type:DOCUMENT', limit: 5 });
     expect(Array.isArray(solr.results)).toBe(true);
-    const r = await client.callTool({ name: 'xwiki_query', arguments: { query: 'where 1=1', type: 'xwql' } }) as { content: Content; isError?: boolean };
+    const r = (await client.callTool({ name: 'xwiki_query', arguments: { query: 'where 1=1', type: 'xwql' } })) as {
+      content: Content;
+      isError?: boolean;
+    };
     if (r.isError) expect(r.content[0].text).toContain('Query type [xwql] is not allowed');
   });
 
   it('analyses required rights, or reports the known XWiki-side error', async () => {
     await page('Rights', 'Script', '{{velocity}}$xcontext.user{{/velocity}}');
-    const r = await client.callTool({ name: 'xwiki_get_required_rights', arguments: { space: `${RUN}.Rights`, page: 'Script' } }) as { content: Content; isError?: boolean };
+    const r = (await client.callTool({ name: 'xwiki_get_required_rights', arguments: { space: `${RUN}.Rights`, page: 'Script' } })) as {
+      content: Content;
+      isError?: boolean;
+    };
     const text = r.content[0]?.text ?? '';
     if (r.isError) {
       // Seen on the 17.10 and 18.8 Docker images: XWiki's own endpoint fails for every page.

@@ -4,6 +4,8 @@ A Model Context Protocol (MCP) server for [XWiki](https://www.xwiki.org/), givin
 
 **Fork of [vitos73/xwiki-mcp](https://github.com/vitos73/xwiki-mcp)** — extended to cover writes, attachments, tags, XObject CRUD, page history and rollback, advanced queries, rendering, Streamable HTTP transport, wiki-wide tag and page navigation, PDF export, and single-property object reads.
 
+Built on the MCP TypeScript SDK v2: it speaks protocol revision **2026-07-28** and still serves clients on 2025 revisions that open with `initialize`, over stdio and Streamable HTTP.
+
 All tool names start with `xwiki_` so they do not clash with other MCP servers. Write and delete tools can be switched off (see [Access modes](#access-modes)).
 
 ---
@@ -72,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.16.0
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.17.0
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
@@ -376,6 +378,7 @@ They write only under a fresh `IT.Run<timestamp>` space. Point them at a disposa
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.17.0 — MCP TypeScript SDK v2: protocol 2026-07-28 (no handshake or sessions, header-validated HTTP requests, cacheable tool list), with 2025-era clients that open with `initialize` (e.g. supergateway) still served
 - [x] v0.16.0 — Live integration tests against XWiki LTS and stable in CI; recycle-bin listing falls back to the core template on wikis without the standard flavor; `xwiki_query` defaults to Solr (XWiki 17.10.5 / 18.2+ allow only Solr through REST unless `rest.allowedQueryTypes` says otherwise); errors include XWiki's own message; CI (build and tests on Node 22 and 24, image build), release only after tests pass, actions pinned by commit, image base and supergateway pinned, Dependabot, provenance and SBOM, `SECURITY.md`, `server.json` for the MCP Registry; Origin / Host checks and 405 in HTTP mode, rate limit, toolsets, call log, titles and server instructions, files as embedded resources with a size cap, paging on every list tool, page content windows, compact JSON, `structuredContent`, secrets from files, clean shutdown
 - [x] v0.15.0 — Consistent tool names (breaking): `list_` for collections, `get_` for one item:
   - `xwiki_get_attachments` → `xwiki_list_attachments`

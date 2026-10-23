@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { toNodeHandler } from '@modelcontextprotocol/node';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { createServer } from 'http';
 import { timingSafeEqual } from 'crypto';
 import { config } from './config.js';
@@ -83,7 +83,7 @@ import { register as registerDeleteComment } from './tools/delete-comment.js';
 
 // Toolsets group tools so a deployment can register only what it needs (XWIKI_MCP_TOOLSETS).
 const TOOLSETS = ['pages', 'recycle_bin', 'comments', 'attachments', 'tags', 'classes', 'objects', 'history', 'search', 'export'] as const;
-type Toolset = typeof TOOLSETS[number];
+type Toolset = (typeof TOOLSETS)[number];
 
 // Every tool with its toolset and the access it needs. XWIKI_MCP_READ_ONLY keeps only 'read';
 // 'delete' tools also need XWIKI_MCP_ALLOW_DELETE.
@@ -176,9 +176,9 @@ if (unknownToolsets.length > 0) {
 }
 const inToolsets = (t: Toolset) => config.toolsets.length === 0 || config.toolsets.includes(t);
 const ALL_TOOLS: Array<[Access, Register]> = TOOLS.map(([, access, register]) => [access, register]);
-const MODE_TOOLS: Array<[Access, Register]> = TOOLS
-  .filter(([toolset, access]) => inToolsets(toolset) && allowed(access))
-  .map(([, access, register]) => [access, register]);
+const MODE_TOOLS: Array<[Access, Register]> = TOOLS.filter(([toolset, access]) => inToolsets(toolset) && allowed(access)).map(
+  ([, access, register]) => [access, register],
+);
 
 // Sent to clients at connection; models read it to see how the tools fit together.
 const INSTRUCTIONS = `Tools for one XWiki instance (${config.baseUrl}). Pages are addressed by space (dot notation for nested spaces, e.g. "Docs.Guides") and page name ("WebHome" for a space's home page).
@@ -191,7 +191,14 @@ const MODE = config.readOnly ? 'read-only' : config.allowDelete ? 'read/write/de
 const DISABLED = new Set(config.disabledTools);
 
 function buildServer(seen?: Set<string>): { server: McpServer; tools: string[] } {
-  const server = new McpServer({ name: 'xwiki-mcp', version: VERSION }, { instructions: INSTRUCTIONS });
+  const server = new McpServer(
+    { name: 'xwiki-mcp', version: VERSION },
+    {
+      instructions: INSTRUCTIONS,
+      // The tool set is fixed for the life of the process, so clients may cache it.
+      cacheHints: { 'tools/list': { ttlMs: 300_000, cacheScope: 'private' }, 'server/discover': { ttlMs: 300_000, cacheScope: 'private' } },
+    },
+  );
   const tools = registerTools(server, new XWikiClient(), MODE_TOOLS, DISABLED, seen);
   return { server, tools };
 }
@@ -230,7 +237,8 @@ async function main() {
   const httpPort = process.env['XWIKI_MCP_PORT'] ? parseInt(process.env['XWIKI_MCP_PORT'], 10) : undefined;
 
   if (httpPort) {
-    // Streamable HTTP transport mode (stateless — one transport per request)
+    // Streamable HTTP transport mode (stateless)
+    const mcpHttp = toNodeHandler(createMcpHandler(() => buildServer().server));
     const httpServer = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost:${httpPort}`);
 
@@ -257,13 +265,9 @@ async function main() {
           res.end('Unauthorized');
           return;
         }
-        // One transport + server instance per request (stateless)
-        const { server } = buildServer();
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: undefined, // stateless
-        });
-        await server.connect(transport);
-        await transport.handleRequest(req, res);
+        // A fresh server per request. Serves 2026-07-28 clients and, statelessly, 2025-era
+        // clients that open with initialize.
+        await mcpHttp(req, res);
         return;
       }
 
@@ -276,18 +280,20 @@ async function main() {
     process.once('SIGINT', shutdown);
 
     httpServer.listen(httpPort, config.httpHost || undefined, () => {
-      process.stderr.write(`xwiki-mcp v${VERSION} started in Streamable HTTP mode on ${config.httpHost || 'all interfaces'}, port ${httpPort}${config.httpToken ? ' (bearer token required)' : ''}\n`);
+      process.stderr.write(
+        `xwiki-mcp v${VERSION} started in Streamable HTTP mode on ${config.httpHost || 'all interfaces'}, port ${httpPort}${config.httpToken ? ' (bearer token required)' : ''}\n`,
+      );
       process.stderr.write(`Wiki: ${config.baseUrl} (${config.wikiName})\n`);
       process.stderr.write(`${SUMMARY}\n`);
       process.stderr.write(`MCP endpoint: http://localhost:${httpPort}/mcp\n`);
     });
-
   } else {
     // Default stdio transport mode
-    const { server } = buildServer();
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    process.once('SIGTERM', () => { void server.close().finally(() => process.exit(0)); });
+    // Answers 2026-07-28 clients and 2025-era clients (initialize), e.g. supergateway.
+    const stdio = serveStdio(() => buildServer().server);
+    process.once('SIGTERM', () => {
+      void stdio.close().finally(() => process.exit(0));
+    });
 
     process.stderr.write(`xwiki-mcp v${VERSION} started (stdio). Wiki: ${config.baseUrl} (${config.wikiName})\n`);
     process.stderr.write(`${SUMMARY}\n`);

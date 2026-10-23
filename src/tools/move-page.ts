@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { XWikiError } from '../client.js';
 import type { XWikiClient } from '../client.js';
 
@@ -16,7 +16,7 @@ Give the target as its final reference, in the same form as the source:
 Options: children (default true) moves child pages of a nested page with it; update_links (default true) rewrites links to the page across the wiki; auto_redirect (default false) leaves a redirect at the old reference. Fails if the target exists. Needs delete right on the source and edit right on the target. Read the page back at its new reference to confirm.
 
 update_links is XWiki's own link refactoring: it rewrites typed links ([[doc:Space.Page]]) that XWiki's link index knows about, but may leave untyped links ([[Space.Page]], [[Page]]) unchanged. After a move, check pages that linked to it (e.g. xwiki_search_pages for the old name).`,
-      inputSchema: {
+      inputSchema: z.object({
         space: z.string().describe('Space of the page to move (dot notation, e.g. "Docs.Guides")'),
         page: z.string().describe('Name of the page to move (e.g. "WebHome")'),
         target_space: z.string().describe('Space of the new reference (e.g. "Docs.Manuals")'),
@@ -25,7 +25,7 @@ update_links is XWiki's own link refactoring: it rewrites typed links ([[doc:Spa
         update_links: z.boolean().default(true).describe('Update links to the page across the wiki (default true)'),
         auto_redirect: z.boolean().default(false).describe('Leave a redirect at the old reference (default false)'),
         new_title: z.string().optional().describe('New page title. Omit to keep the current title'),
-      },
+      }),
     },
     async ({ space, page, target_space, target_page, children, update_links, auto_redirect, new_title }) => {
       try {
@@ -37,9 +37,8 @@ update_links is XWiki's own link refactoring: it rewrites typed links ([[doc:Spa
         });
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (e) {
-        const msg = e instanceof XWikiError && e.status === 404
-          ? `Page not found: ${space}/${page}`
-          : e instanceof Error ? e.message : String(e);
+        const msg =
+          e instanceof XWikiError && e.status === 404 ? `Page not found: ${space}/${page}` : e instanceof Error ? e.message : String(e);
         return { content: [{ type: 'text', text: msg }], isError: true };
       }
     },

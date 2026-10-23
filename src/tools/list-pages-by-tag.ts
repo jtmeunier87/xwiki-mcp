@@ -1,22 +1,27 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
-  server.tool(
+  server.registerTool(
     'xwiki_list_pages_by_tag',
-    'Get all pages that have a specific tag. Use get_all_wiki_tags first to see available tags. Useful for topic-based navigation (e.g. find all pages tagged "howto" or "release").',
     {
-      tag: z.string().describe("The tag name to search for (e.g. 'howto', 'release')"),
-      limit: z.number().int().min(1).max(200).default(50).describe('Maximum number of pages to return (default 50)'),
+      description:
+        'Get all pages that have a specific tag. Use get_all_wiki_tags first to see available tags. Useful for topic-based navigation (e.g. find all pages tagged "howto" or "release").',
+      inputSchema: z.object({
+        tag: z.string().describe("The tag name to search for (e.g. 'howto', 'release')"),
+        limit: z.number().int().min(1).max(200).default(50).describe('Maximum number of pages to return (default 50)'),
+      }),
     },
     async ({ tag, limit }) => {
       const pages = await client.getPagesByTag(tag, limit);
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ tag, count: pages.length, pages }),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ tag, count: pages.length, pages }),
+          },
+        ],
       };
     },
   );

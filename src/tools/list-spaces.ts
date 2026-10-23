@@ -1,11 +1,15 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { XWikiClient } from '../client.js';
 import { pagingShape, pageOf } from './paging.js';
+import { z } from 'zod';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
     'xwiki_list_spaces',
-    { description: 'List the spaces in the wiki (nested spaces in dot notation), paged with start / limit.', inputSchema: { ...pagingShape } },
+    {
+      description: 'List the spaces in the wiki (nested spaces in dot notation), paged with start / limit.',
+      inputSchema: z.object({ ...pagingShape }),
+    },
     async ({ start, limit }) => {
       try {
         const { items, _pagination } = pageOf(await client.listSpaces(), start, limit);

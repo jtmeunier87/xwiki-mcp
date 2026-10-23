@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP (Model Context Protocol) server that gives AI agents read/write access to an XWiki instance through its REST API. TypeScript, `@modelcontextprotocol/sdk`, stdio or Streamable HTTP transport. 52 tools, all prefixed `xwiki_`; README.md is the tool reference.
+MCP (Model Context Protocol) server that gives AI agents read/write access to an XWiki instance through its REST API. TypeScript, MCP TypeScript SDK v2 (`@modelcontextprotocol/server`, `@modelcontextprotocol/node`; tests use `@modelcontextprotocol/client`), stdio or Streamable HTTP transport. Speaks protocol 2026-07-28 and still serves 2025-era clients that open with `initialize` (`serveStdio`, `createMcpHandler`). 52 tools, all prefixed `xwiki_`; README.md is the tool reference.
 
 **This is a public, generic tool.** Never add anything specific to one organisation or wiki: no real space, page, class, user, tag or host names, and no description of how a particular wiki uses its pages or objects. Examples in tool descriptions, tests and docs use neutral names (`Main`, `Sandbox`, `Docs.Guides`, `Sandbox.Code.ExampleClass`, `XWiki.Admin`, `XWiki.JaneDoe`, `wiki.example.com`).
 
@@ -38,7 +38,7 @@ src/
 └── tools/            # One file per tool, each exports register(server, client)
 ```
 
-To add a tool: create `src/tools/<name>.ts`, add the client method and types, add it to `TOOLS` in `index.ts` with its access level (`read`, `write` or `delete`; annotations follow from it, and a write that only adds or is idempotent goes in `ADDITIVE` / `IDEMPOTENT` in `registry.ts`), add a test, and update README.md.
+To add a tool: create `src/tools/<name>.ts` with `server.registerTool(name, { description, inputSchema: z.object({...}) }, handler)` (v2 has no `server.tool()`), add the client method and types, add it to `TOOLS` in `index.ts` with its access level (`read`, `write` or `delete`; annotations follow from it, and a write that only adds or is idempotent goes in `ADDITIVE` / `IDEMPOTENT` in `registry.ts`), add a test, and update README.md.
 
 ## Configuration (Environment Variables)
 
@@ -113,4 +113,5 @@ Tool errors must be returned as `isError` results, never crash the MCP server pr
 ## References
 
 - XWiki REST API: https://www.xwiki.org/xwiki/bin/view/Documentation/UserGuide/Features/XWikiRESTfulAPI
-- MCP TypeScript SDK: https://github.com/modelcontextprotocol/typescript-sdk
+- MCP TypeScript SDK v2: https://ts.sdk.modelcontextprotocol.io/v2/ (migration notes: /v2/migration/upgrade-to-v2)
+- MCP specification 2026-07-28: https://modelcontextprotocol.io/specification/2026-07-28

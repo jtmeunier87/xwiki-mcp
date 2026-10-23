@@ -1,5 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer, ToolAnnotations } from '@modelcontextprotocol/server';
 import type { XWikiClient } from './client.js';
 import { config } from './config.js';
 
@@ -8,14 +7,23 @@ export type Register = (server: McpServer, client: XWikiClient) => void;
 
 // Writes that only add (they never change or remove existing content).
 const ADDITIVE = new Set([
-  'xwiki_add_comment', 'xwiki_add_tags', 'xwiki_create_object', 'xwiki_add_class_property',
-  'xwiki_copy_page', 'xwiki_restore_deleted_page',
+  'xwiki_add_comment',
+  'xwiki_add_tags',
+  'xwiki_create_object',
+  'xwiki_add_class_property',
+  'xwiki_copy_page',
+  'xwiki_restore_deleted_page',
 ]);
 
 // Writes that leave the wiki the same when repeated with the same arguments.
 const IDEMPOTENT = new Set([
-  'xwiki_update_page', 'xwiki_update_object', 'xwiki_update_class_properties', 'xwiki_set_class_property_enabled',
-  'xwiki_add_tags', 'xwiki_remove_tags', 'xwiki_update_comment',
+  'xwiki_update_page',
+  'xwiki_update_object',
+  'xwiki_update_class_properties',
+  'xwiki_set_class_property_enabled',
+  'xwiki_add_tags',
+  'xwiki_remove_tags',
+  'xwiki_update_comment',
 ]);
 
 /** MCP tool annotations, so clients can tell reads from writes and destructive writes. */
@@ -73,7 +81,9 @@ function guard<T extends (...args: never[]) => unknown>(name: string, cb: T): T 
     const started = Date.now();
     let result: ToolResult;
     if (!takeCallSlot(started)) {
-      result = errorResult(`Rate limit reached: ${config.rateLimit} tool calls per minute (XWIKI_MCP_RATE_LIMIT). Wait a minute and retry.`);
+      result = errorResult(
+        `Rate limit reached: ${config.rateLimit} tool calls per minute (XWIKI_MCP_RATE_LIMIT). Wait a minute and retry.`,
+      );
     } else {
       try {
         result = (await cb(...args)) as ToolResult;
@@ -82,7 +92,13 @@ function guard<T extends (...args: never[]) => unknown>(name: string, cb: T): T 
       }
     }
     const first = result.content?.[0];
-    if (!result.isError && result.structuredContent === undefined && result.content?.length === 1 && first?.type === 'text' && first.text?.startsWith('{')) {
+    if (
+      !result.isError &&
+      result.structuredContent === undefined &&
+      result.content?.length === 1 &&
+      first?.type === 'text' &&
+      first.text?.startsWith('{')
+    ) {
       try {
         result.structuredContent = JSON.parse(first.text);
       } catch {
@@ -90,7 +106,9 @@ function guard<T extends (...args: never[]) => unknown>(name: string, cb: T): T 
       }
     }
     if (config.logCalls) {
-      process.stderr.write(`${JSON.stringify({ time: new Date(started).toISOString(), tool: name, ok: !result.isError, ms: Date.now() - started })}\n`);
+      process.stderr.write(
+        `${JSON.stringify({ time: new Date(started).toISOString(), tool: name, ok: !result.isError, ms: Date.now() - started })}\n`,
+      );
     }
     return result;
   }) as unknown as T;
@@ -117,18 +135,15 @@ export function registerTools(
             seen.add(name);
             if (disabled.has(name)) return undefined;
             registered.push(name);
-            return target.registerTool(name, { title: titleFor(name), ...cfg, annotations: { title: titleFor(name), ...annotationsFor(name, access), ...cfg.annotations } } as never, guard(name, cb) as never);
-          };
-        }
-        if (prop === 'tool') {
-          return (...args: unknown[]) => {
-            // Tools here call tool(name, description, paramsSchema, cb).
-            if (args.length !== 4) throw new Error(`Unexpected tool() registration for ${String(args[0])}`);
-            const [name, description, schema, cb] = args as [string, string, never, (...a: never[]) => unknown];
-            seen.add(name);
-            if (disabled.has(name)) return undefined;
-            registered.push(name);
-            return target.registerTool(name, { title: titleFor(name), description, inputSchema: schema, annotations: { title: titleFor(name), ...annotationsFor(name, access) } } as never, guard(name, cb) as never);
+            return target.registerTool(
+              name,
+              {
+                title: titleFor(name),
+                ...cfg,
+                annotations: { title: titleFor(name), ...annotationsFor(name, access), ...cfg.annotations },
+              } as never,
+              guard(name, cb) as never,
+            );
           };
         }
         return Reflect.get(target, prop, receiver);
