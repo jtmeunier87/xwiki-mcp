@@ -6,13 +6,13 @@ import { applyEdits, EditError } from '../edit.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
-    'xwiki_edit_page',
+    'xwiki_replace_in_page',
     {
       description:
         'Replace exact pieces of text in a page\'s content, or in one property of an object on the page ' +
         '(e.g. the code of a JavaScript / StyleSheet extension or a script stored in an object), without ' +
         'sending the whole text. Use this for targeted changes to long pages and code, such as Velocity or ' +
-        'Groovy sheets; use xwiki_update_page to rewrite a page completely.\n\n' +
+        'Groovy sheets; use xwiki_update_page or xwiki_update_object to replace a whole value.\n\n' +
         'Each old_text must occur exactly once in the current text (whitespace and line breaks included); ' +
         'edits apply in order and nothing is saved unless all of them match. With expected_version, the edit ' +
         'is refused if the page has changed since that version was read. The saved text is read back and ' +

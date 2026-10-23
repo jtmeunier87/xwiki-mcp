@@ -1,4 +1,4 @@
-// Targeted text edits for xwiki_edit_page: each old text must occur exactly once.
+// Targeted text edits for xwiki_replace_in_page: each old text must occur exactly once.
 
 export interface TextEdit {
   old_text: string;

@@ -8,9 +8,10 @@ export function register(server: McpServer, client: XWikiClient): void {
     'xwiki_update_page',
     {
       description:
-        'Update an existing wiki page. You can update the content, title, or both. ' +
+        'Update an existing wiki page by replacing its whole content, its title, or both. ' +
         'Fields not provided will be preserved from the current version. ' +
-        'At least one of content or title must be provided.',
+        'At least one of content or title must be provided. ' +
+        'To change only part of the content (e.g. a few lines of a long page or script), use xwiki_replace_in_page instead.',
       inputSchema: z.object({
         space: z.string().describe('Space name. Use dot notation for nested spaces: "Space1.SubSpace"'),
         page: z.string().describe('Page name (e.g. "WebHome", "MyPage")'),

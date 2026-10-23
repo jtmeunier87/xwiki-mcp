@@ -88,7 +88,7 @@ describe('applyEdits', () => {
   });
 });
 
-describe('xwiki_edit_page', () => {
+describe('xwiki_replace_in_page', () => {
   function fakeClient(content: string, version = '3.1') {
     const state = { content, version, prop: 'body { color: red; }', writes: 0 };
     return {
@@ -111,7 +111,7 @@ describe('xwiki_edit_page', () => {
   }
 
   it('edits page content and reads it back', async () => {
-    const { register } = await import('./edit-page.js');
+    const { register } = await import('./replace-in-page.js');
     const c = fakeClient('{{velocity}}\n"layout":"grid-3x2"\n{{/velocity}}');
     const r = await handlerOf(register, c)({ space: 'Main', page: 'Sheet', object_number: 0, edits: [{ old_text: 'grid-3x2', new_text: 'grid-2' }] });
     expect(r.isError).toBeUndefined();
@@ -120,7 +120,7 @@ describe('xwiki_edit_page', () => {
   });
 
   it('edits one object property', async () => {
-    const { register } = await import('./edit-page.js');
+    const { register } = await import('./replace-in-page.js');
     const c = fakeClient('x');
     const r = await handlerOf(register, c)({
       space: 'Main', page: 'Style', class_name: 'XWiki.StyleSheetExtension', object_number: 0, property: 'code',
@@ -131,7 +131,7 @@ describe('xwiki_edit_page', () => {
   });
 
   it('saves nothing when an edit does not match or the version moved on', async () => {
-    const { register } = await import('./edit-page.js');
+    const { register } = await import('./replace-in-page.js');
     const c = fakeClient('a b');
     const h = handlerOf(register, c);
     const miss = await h({ space: 'Main', page: 'P', object_number: 0, edits: [{ old_text: 'b', new_text: 'c' }, { old_text: 'zz', new_text: 'y' }] });
@@ -143,7 +143,7 @@ describe('xwiki_edit_page', () => {
   });
 
   it('needs class_name and property together', async () => {
-    const { register } = await import('./edit-page.js');
+    const { register } = await import('./replace-in-page.js');
     const r = await handlerOf(register, fakeClient('a'))({ space: 'Main', page: 'P', object_number: 0, property: 'code', edits: [{ old_text: 'a', new_text: 'b' }] });
     expect(r.content[0].text).toMatch(/class_name/);
   });

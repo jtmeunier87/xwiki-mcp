@@ -181,19 +181,19 @@ describe.skipIf(!URL_)('live XWiki', () => {
     const sp = `${RUN}.Edit`;
     await page('Edit', 'Sheet', '{{velocity}}\n#set($layout = "grid-3x2")\n$layout\n{{/velocity}}');
     const before = await call('xwiki_get_page', { space: sp, page: 'Sheet' });
-    const r = await call('xwiki_edit_page', {
+    const r = await call('xwiki_replace_in_page', {
       space: sp, page: 'Sheet', expected_version: before.version,
       edits: [{ old_text: '"grid-3x2"', new_text: '"grid-2"' }],
     });
     expect(r).toMatchObject({ status: 'updated', verified: true, previous_version: before.version });
     expect((await call('xwiki_get_page', { space: sp, page: 'Sheet' })).content).toContain('#set($layout = "grid-2")');
-    expect(await callError('xwiki_edit_page', {
+    expect(await callError('xwiki_replace_in_page', {
       space: sp, page: 'Sheet', expected_version: before.version, edits: [{ old_text: 'grid-2', new_text: 'x' }],
     })).toMatch(/changed since you read it/);
-    expect(await callError('xwiki_edit_page', { space: sp, page: 'Sheet', edits: [{ old_text: 'missing', new_text: 'x' }] })).toMatch(/Nothing saved/);
+    expect(await callError('xwiki_replace_in_page', { space: sp, page: 'Sheet', edits: [{ old_text: 'missing', new_text: 'x' }] })).toMatch(/Nothing saved/);
 
     await call('xwiki_create_object', { space: sp, page: 'Sheet', class_name: 'XWiki.StyleSheetExtension', properties: { code: '.a { color: red; }\n.b { color: red; }' } });
-    const o = await call('xwiki_edit_page', {
+    const o = await call('xwiki_replace_in_page', {
       space: sp, page: 'Sheet', class_name: 'XWiki.StyleSheetExtension', object_number: 0, property: 'code',
       edits: [{ old_text: '.b { color: red; }', new_text: '.b { color: blue; }' }],
     });
