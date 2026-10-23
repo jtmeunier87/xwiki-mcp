@@ -177,6 +177,31 @@ describe.skipIf(!URL_)('live XWiki', () => {
     expect(onPage.objects).toEqual([expect.objectContaining({ class_name: cls, number: 0, properties: { status: 'done' } })]);
   });
 
+  it('edits page content and an object property in place', async () => {
+    const sp = `${RUN}.Edit`;
+    await page('Edit', 'Sheet', '{{velocity}}\n#set($layout = "grid-3x2")\n$layout\n{{/velocity}}');
+    const before = await call('xwiki_get_page', { space: sp, page: 'Sheet' });
+    const r = await call('xwiki_edit_page', {
+      space: sp, page: 'Sheet', expected_version: before.version,
+      edits: [{ old_text: '"grid-3x2"', new_text: '"grid-2"' }],
+    });
+    expect(r).toMatchObject({ status: 'updated', verified: true, previous_version: before.version });
+    expect((await call('xwiki_get_page', { space: sp, page: 'Sheet' })).content).toContain('#set($layout = "grid-2")');
+    expect(await callError('xwiki_edit_page', {
+      space: sp, page: 'Sheet', expected_version: before.version, edits: [{ old_text: 'grid-2', new_text: 'x' }],
+    })).toMatch(/changed since you read it/);
+    expect(await callError('xwiki_edit_page', { space: sp, page: 'Sheet', edits: [{ old_text: 'missing', new_text: 'x' }] })).toMatch(/Nothing saved/);
+
+    await call('xwiki_create_object', { space: sp, page: 'Sheet', class_name: 'XWiki.StyleSheetExtension', properties: { code: '.a { color: red; }\n.b { color: red; }' } });
+    const o = await call('xwiki_edit_page', {
+      space: sp, page: 'Sheet', class_name: 'XWiki.StyleSheetExtension', object_number: 0, property: 'code',
+      edits: [{ old_text: '.b { color: red; }', new_text: '.b { color: blue; }' }],
+    });
+    expect(o).toMatchObject({ verified: true, target: 'XWiki.StyleSheetExtension[0].code' });
+    const code = await call('xwiki_get_object_property', { space: sp, page: 'Sheet', class_name: 'XWiki.StyleSheetExtension', property_name: 'code' });
+    expect(code.value).toBe('.a { color: red; }\n.b { color: blue; }');
+  });
+
   it('keeps tags and comments in step', async () => {
     await page('Social', 'Post');
     await call('xwiki_add_tags', { space: `${RUN}.Social`, page: 'Post', tags: ['a', 'b', 'c'] });
