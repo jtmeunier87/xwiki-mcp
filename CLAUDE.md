@@ -103,6 +103,7 @@ Mocked tests cannot prove a write is saved. Add a live test for every write or `
 
 | HTTP Status | Message |
 |---|---|
+| 400 | `"XWiki rejected the request (400): {reason from XWiki}. URL: {url}"` |
 | 404 | `"Page not found: {space}/{page}"` |
 | 401/403 | `"Authentication failed. Check XWIKI_AUTH_TYPE and credentials."` |
 | 500 | `"XWiki server error: {status}. URL: {url}"` |

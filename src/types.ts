@@ -279,6 +279,10 @@ export interface XWikiObjectWriteResult {
 // ---------------------------------------------------------------------------
 
 export interface XWikiHistorySummaryRaw {
+  /** e.g. "xwiki:Main.WebHome" (on /modifications; the page's own history omits it in practice) */
+  pageId?: string;
+  space?: string;
+  name?: string;
   version: string;
   /** Unix millisecond timestamp or ISO string */
   modified?: number | string;
@@ -323,6 +327,8 @@ export interface RenderResult {
 }
 
 export interface RecentChange {
+  /** Page reference, e.g. "Main.WebHome" */
+  page?: string;
   version: string;
   modified_date?: string;
   modifier?: string;
@@ -381,8 +387,12 @@ export interface ExportResult {
   space: string;
   page: string;
   format: string;
-  /** base64-encoded file content */
-  content_base64: string;
+  /** base64-encoded file content (pdf, xar) */
+  content_base64?: string;
+  /** html: the rendered page files from the export zip */
+  pages?: Array<{ path: string; html: string }>;
+  /** html: skin, script and image files in the zip that were left out */
+  files_omitted?: number;
   content_type: string;
   size_bytes: number;
   /** The export URL */
@@ -481,7 +491,14 @@ export interface MovePageResult {
   from: string;
   to: string;
   children_moved: boolean;
+  /** True only when every page found linking to the old reference was rewritten */
   links_updated: boolean;
+  /** Pages the wiki's link index listed as linking to the page before the move */
+  backlinks_found?: number;
+  /** Pages that still link to the old reference after the move */
+  links_not_updated?: string[];
+  /** Why the links could not be checked (e.g. the search index is unavailable) */
+  link_check_error?: string;
   redirect_left: boolean;
   url?: string;
   status: 'moved';

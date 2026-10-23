@@ -21,7 +21,7 @@ export function register(server: McpServer, client: XWikiClient): void {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ classes, pagination }),
+              text: JSON.stringify({ classes, _pagination: pagination }),
             },
           ],
         };

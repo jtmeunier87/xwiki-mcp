@@ -11,7 +11,7 @@ export function register(server: McpServer, client: XWikiClient): void {
 
 Use it to read every record of a class in one paged call instead of searching for pages and reading each object. Results are ordered by page then object number (or by page modification date, newest first, with order: "date"). Pages the account cannot view are left out, so a page of results can be shorter than limit; keep paging while has_more is true.
 
-include_properties (default true) reads each object in full, one extra request per object; set it to false for just page, object number and headline (the first property's value).`,
+include_properties (default true) reads each object in full, one extra request per object; set it to false for just page and object number (plus XWiki's headline, the value of the object's first property, when it is not empty).`,
       inputSchema: z.object({
         class_name: z.string().describe('Full class name (e.g. "Sandbox.Code.ExampleClass", "XWiki.XWikiUsers")'),
         start: z.number().int().min(0).default(0).describe('Offset for pagination (default 0)'),
