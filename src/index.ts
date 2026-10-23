@@ -106,11 +106,13 @@ const TOOLS: Array<[Access, Register]> = [
   ['read', registerGetAllWikiTags],
   ['read', registerGetPagesByTag],
 
-  // Classes and objects
+  // Classes
   ['read', registerListClasses],
   ['read', registerGetClass],
   ['write', registerUpdateClassProperties],
   ['write', registerAddClassProperty],
+
+  // Objects
   ['read', registerListObjects],
   ['read', registerGetObject],
   ['read', registerGetObjectProperty],

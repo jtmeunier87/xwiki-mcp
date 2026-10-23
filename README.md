@@ -8,7 +8,7 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 42 tools across 9 categories
+## 42 tools across 10 categories
 
 | Category | Count | Tools |
 |---|---|---|
@@ -17,7 +17,8 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 | **Comments** | 2 | `xwiki_get_comments`, `xwiki_add_comment` |
 | **Attachments** | 5 | `xwiki_get_attachments`, `xwiki_search_attachments`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_delete_attachment` |
 | **Tags** | 5 | `xwiki_get_tags`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_get_all_wiki_tags`, `xwiki_get_pages_by_tag` |
-| **Classes & Objects** | 11 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_list_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **Classes** | 4 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_update_class_properties`, `xwiki_add_class_property` |
+| **Objects** | 7 | `xwiki_list_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
 | **History** | 4 | `xwiki_get_page_history`, `xwiki_get_page_version`, `xwiki_rollback_page`, `xwiki_get_recent_changes` |
 | **Search & Query** | 2 | `xwiki_search`, `xwiki_advanced_search` |
 | **Render & Export** | 2 | `xwiki_render_page`, `xwiki_export_page` |
@@ -174,7 +175,7 @@ List every tag used anywhere in the wiki. Use this before `xwiki_get_pages_by_ta
 #### `xwiki_get_pages_by_tag`
 Get all pages that have a specific tag (e.g. `howto`).
 
-### Classes & Objects
+### Classes
 
 #### `xwiki_list_classes`
 List all XWiki classes defined in the wiki.
@@ -187,6 +188,8 @@ Change attributes of existing class properties, e.g. `{"status": {"hint": "Curre
 
 #### `xwiki_add_class_property`
 Add a property to a class by type name (`String`, `TextArea`, `Number`, `Boolean`, `Date`, `StaticList`, `DBList`, `Page`, `Users`, …), with optional attributes such as `prettyName` and `hint`. Uses the `/bin/propadd/` action, then reads the class back. There is no delete or rename tool for class properties: those change existing objects.
+
+### Objects
 
 #### `xwiki_list_objects`
 List all XObjects on a page. Optionally filter by `class_name`.
