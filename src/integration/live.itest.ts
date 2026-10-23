@@ -34,6 +34,16 @@ async function callError(name: string, args: Record<string, unknown>): Promise<s
   return r.content[0]?.text ?? '';
 }
 
+/** Retry a read until check passes (search indexes lag behind writes); return its last value. */
+async function eventually<T>(read: () => Promise<T>, check: (v: T) => boolean, ms = 60000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await read();
+    if (check(v) || Date.now() > end) return v;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
 const page = (space: string, name: string, content = name) =>
   call('xwiki_create_page', { space: `${RUN}.${space}`, page: name, title: name, content });
 
@@ -163,6 +173,8 @@ describe.skipIf(!URL_)('live XWiki', () => {
     const all = await call('xwiki_list_class_objects', { class_name: cls });
     expect(all.objects).toHaveLength(1);
     expect(all.objects[0]).toMatchObject({ page: `${RUN}.Data.Record`, properties: { status: 'done' } });
+    const onPage = await call('xwiki_list_page_objects', { space: `${RUN}.Data`, page: 'Record', class_name: cls });
+    expect(onPage.objects).toEqual([expect.objectContaining({ class_name: cls, number: 0, properties: { status: 'done' } })]);
   });
 
   it('keeps tags and comments in step', async () => {
@@ -178,10 +190,18 @@ describe.skipIf(!URL_)('live XWiki', () => {
   it('compares and rolls back versions', async () => {
     await page('History', 'Doc', 'one');
     await call('xwiki_update_page', { space: `${RUN}.History`, page: 'Doc', content: 'one\ntwo' });
+    // A save that changes no content: the current version's date must still be its own.
+    await new Promise(r => setTimeout(r, 3000));
+    await call('xwiki_add_tags', { space: `${RUN}.History`, page: 'Doc', tags: ['t'] });
     const versions = await call('xwiki_list_page_versions', { space: `${RUN}.History`, page: 'Doc' });
     const oldest = versions.history[versions.history.length - 1].version;
     const cmp = await call('xwiki_compare_page_versions', { space: `${RUN}.History`, page: 'Doc', from_version: oldest });
     expect(cmp).toMatchObject({ lines_added: 1, lines_removed: 0 });
+    expect(cmp.to).toMatchObject({ version: versions.history[0].version, date: versions.history[0].modified_date });
+    expect(cmp.to.date).not.toBe(versions.history[1].modified_date);
+    expect(await callError('xwiki_list_page_versions', { space: `${RUN}.History`, page: 'Missing' })).toBe(
+      `Page not found: ${RUN}.History/Missing`,
+    );
     await call('xwiki_rollback_page', { space: `${RUN}.History`, page: 'Doc', version: oldest });
     expect((await call('xwiki_get_page', { space: `${RUN}.History`, page: 'Doc' })).content).toBe('one');
   });
@@ -193,6 +213,22 @@ describe.skipIf(!URL_)('live XWiki', () => {
       arguments: { space: `${RUN}.Moved`, page: 'WebHome', format: 'xar', children: true },
     })) as { content: Content };
     expect(xar.content[0].type).toBe('resource');
+    const html = await call('xwiki_export_page', { space: `${RUN}.Moved`, page: 'WebHome', format: 'html' });
+    expect(html.pages).toHaveLength(1);
+    expect(html.pages[0].html).toContain('n');
+    expect(html.pages[0].html).not.toContain('<script');
+    expect(html.pages[0].html.length).toBeLessThan(2000);
+  });
+
+  it('searches one space only', async () => {
+    const word = `needle${Date.now()}`;
+    await page('Find', 'Here', word);
+    await page('Elsewhere', 'There', word);
+    const found = await eventually(
+      () => call('xwiki_search_pages', { query: word, space: `${RUN}.Find` }),
+      r => r.results.length > 0,
+    );
+    expect(found.results.map((r: { id: string }) => r.id)).toEqual([`xwiki:${RUN}.Find.Here`]);
   });
 
   it('answers a solr query and reports a refused query type clearly', async () => {

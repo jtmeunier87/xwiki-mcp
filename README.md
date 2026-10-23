@@ -74,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.18.0
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.19.0
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
@@ -178,7 +178,7 @@ Update an existing page. Fetches current version first to preserve fields not sp
 #### `xwiki_move_page`
 Move or rename a page, as the wiki's Rename action does: history, objects, attachments and comments go with it. The target is given as its final reference (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `Install` for a terminal one). `children` (default true) moves child pages, `update_links` (default true) rewrites links across the wiki and checks the result, `auto_redirect` (default false) leaves a redirect at the old reference, `new_title` sets a new title. Omitting `new_title` keeps the current title. Fails if the target exists. Needs delete right on the source and edit right on the target. A write tool: it removes nothing but the page no longer exists at its old reference.
 
-XWiki rewrites only the pages its search index lists as linking to the page (Solr `links_extended`), and skips any page it has not indexed yet, such as one saved moments before. The tool runs the same lookup before the move and checks each listed page afterwards: `backlinks_found` counts them, `links_updated` is true only when every one was rewritten, and `links_not_updated` names pages that still point to the old reference. Object properties of type Page (page pickers) are not in the link index and are not rewritten.
+XWiki rewrites only the pages its search index lists as linking to the page (Solr `links_extended`), and skips any page it has not indexed yet, such as one saved moments before. The tool runs the same lookup before the move and checks each listed page afterwards: `backlinks_found` counts them, `links_updated` is true only when every one was rewritten, and `links_not_updated` names pages that still point to the old reference. Object properties of type Page (page pickers) are not in the link index, so the result does not check them; some XWiki versions rewrite them and others leave them, so read them back.
 
 #### `xwiki_copy_page`
 Copy a page to a new reference, as the wiki's Copy action does; the original is unchanged. Same target form as `xwiki_move_page` (`Docs.Manuals` + `WebHome` for a nested page, `Docs.Guides` + `SetupCopy` for a terminal one). `children` (default true) copies child pages of a nested page; `new_title` sets the copy's title; without it the copy keeps the source's title (XWiki would otherwise retitle a page whose title equals its name). Fails if the target exists. Needs view right on the source and edit right on the target.
@@ -271,7 +271,7 @@ Disable or enable a class property (`/bin/propdisable/`, `/bin/propenable/`). A 
 ### Objects
 
 #### `xwiki_list_page_objects`
-List all XObjects on a page. Optionally filter by `class_name`.
+List the XObjects on a page with their property values. Optionally filter by `class_name`. `include_properties` (default true) reads each listed object in full, one request per object; set it to false for just class and number. Paged with `start` / `limit`.
 
 #### `xwiki_get_object`
 Get a single object by class name and object number (0-based).
@@ -300,7 +300,7 @@ List all revisions of a page — version string, timestamp, author, edit comment
 Retrieve full page content at a specific historical version (e.g. `3.1`).
 
 #### `xwiki_compare_page_versions`
-Compare two versions of a page (or one version with the current page): a unified diff of the content, lines added and removed, and any title or syntax change, with each version's author and date. The diff is computed by the server; xWiki's REST API has none.
+Compare two versions of a page (or one version with the current version): a unified diff of the content, lines added and removed, and any title or syntax change, with each version's author and date as the page history shows them. The diff is computed by the server; xWiki's REST API has none.
 
 #### `xwiki_rollback_page`
 Roll a page back to an earlier version (content and objects). xWiki saves the old version as a new version, so history is kept. Uses the `/bin/rollback/` action URL with the CSRF token.
@@ -311,7 +311,7 @@ Get the most recent modifications across the entire wiki: page, version, date, a
 ### Search & Query
 
 #### `xwiki_search_pages`
-Full-text search across the wiki. Supports `content`, `title`, or `name` scope with optional space filter.
+Full-text search across the wiki. Supports `content`, `title`, or `name` scope. `space` limits it to pages directly in that space (its subspaces are not searched).
 
 #### `xwiki_query`
 Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WHERE clause — xWiki prepends the SELECT. Example: `where doc.space = 'Main' order by doc.date desc`. Recent XWiki versions accept only Solr on this endpoint unless `xwiki.properties` sets `rest.allowedQueryTypes` (e.g. `xwql,hql,solr`); a refused type returns XWiki's message naming the allowed types.
@@ -322,7 +322,7 @@ Run HQL, XWQL, or Solr queries against the wiki. For HQL/XWQL supply only the WH
 Render a page through the xWiki macro engine to plain text or HTML. Useful for pages with macros, velocity, or include blocks. Uses the action URL (`/bin/get/`) — not the REST API.
 
 #### `xwiki_export_page`
-Export a page as a file. `pdf` and `xar` come back as an MCP embedded resource (binary) with name, type, size and URL; over `XWIKI_MCP_MAX_FILE_BYTES` they are refused. `format`: `pdf` (default, needs the PDF export extension), `xar` (a wiki package with objects and attachments that can be imported elsewhere; needs wiki admin rights; `history: true` includes page history) or `html` (the rendered page as static HTML, returned as text in `pages`; the export's skin, script and image files, several MB, are left out and counted in `files_omitted`). For `xar` and `html`, `children: true` adds every page under a nested page.
+Export a page as a file. `pdf` and `xar` come back as an MCP embedded resource (binary) with name, type, size and URL; over `XWIKI_MCP_MAX_FILE_BYTES` they are refused. `format`: `pdf` (default, needs the PDF export extension), `xar` (a wiki package with objects and attachments that can be imported elsewhere; needs wiki admin rights; `history: true` includes page history) or `html` (the rendered page as static HTML, returned as text in `pages`: each page's content area only, without the skin's menus, scripts and footer; the export's skin, script and image files, several MB, are left out and counted in `files_omitted`). For `xar` and `html`, `children: true` adds every page under a nested page.
 
 ---
 
@@ -382,6 +382,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.19.0 — Fixes from a second live test: `xwiki_search_pages` honours `space` (the wiki-wide search ignored it); `xwiki_compare_page_versions` gives the current version its own date and author; `xwiki_list_page_objects` returns property values (`include_properties`); HTML export returns each page's content area, not the whole skin page; a missing page's history says "Page not found"; `xwiki_move_page` no longer says Page properties are never rewritten (it depends on the XWiki version)
 - [x] v0.18.0 — Fixes from a live test: `xwiki_move_page` checks that links were rewritten (`backlinks_found`, `links_not_updated`); copy and move keep the title; HTML export returns the page HTML, not a multi-MB zip; attachment versions newest first; history of a missing page is not found; dates are ISO strings everywhere; empty headline and empty required-right entries left out; upload URL without a stale `rev`; a rejected request (400) carries XWiki's reason; `xwiki_list_classes` honours `start` / `limit` (XWiki returns every class); `xwiki_list_recent_changes` names the page of each change
 - [x] v0.17.0 — MCP TypeScript SDK v2: protocol 2026-07-28 (no handshake or sessions, header-validated HTTP requests, cacheable tool list), with 2025-era clients that open with `initialize` (e.g. supergateway) still served
 - [x] v0.16.0 — Live integration tests against XWiki LTS and stable in CI; recycle-bin listing falls back to the core template on wikis without the standard flavor; `xwiki_query` defaults to Solr (XWiki 17.10.5 / 18.2+ allow only Solr through REST unless `rest.allowedQueryTypes` says otherwise); errors include XWiki's own message; CI (build and tests on Node 22 and 24, image build), release only after tests pass, actions pinned by commit, image base and supergateway pinned, Dependabot, provenance and SBOM, `SECURITY.md`, `server.json` for the MCP Registry; Origin / Host checks and 405 in HTTP mode, rate limit, toolsets, call log, titles and server instructions, files as embedded resources with a size cap, paging on every list tool, page content windows, compact JSON, `structuredContent`, secrets from files, clean shutdown

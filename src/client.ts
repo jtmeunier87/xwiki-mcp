@@ -224,9 +224,9 @@ export class XWikiClient {
     // XWiki Solr search supports field prefix syntax
     const q = scope === 'title' ? `title:${query}` : scope === 'name' ? `name:${query}` : query;
     const params: Record<string, string | number> = { q, start, number: limit };
-    if (space) params.space = space;
-
-    const data = await this.get<XWikiSearchResponse>('/search', params);
+    // The wiki-wide /search ignores a space parameter; the space's own search resource limits it.
+    const path = space ? `${this.spacePath(space)}/search` : '/search';
+    const data = await this.get<XWikiSearchResponse>(path, params);
     const results = (data.searchResults ?? []).map(r => {
       const docItem = r.hierarchy?.items?.findLast(i => i.type === 'document');
       return {
@@ -721,6 +721,14 @@ export class XWikiClient {
   }
 
   /**
+   * Fill in the properties of listed objects. The list endpoint returns summaries without
+   * property values, so each object is read in full, a few at a time.
+   */
+  async withObjectProperties(space: string, page: string, objects: XWikiObject[]): Promise<XWikiObject[]> {
+    return this.mapLimit(objects, 6, o => this.getObject(space, page, o.class_name, o.number));
+  }
+
+  /**
    * Get a single object by class name and object number.
    */
   async getObject(space: string, page: string, className: string, objectNumber: number): Promise<XWikiObject> {
@@ -1185,9 +1193,10 @@ export class XWikiClient {
       // The zip also holds the whole skin (CSS, JavaScript libraries, icons): several MB for one
       // page. Return only the rendered pages, as text.
       const entries = readZip(Buffer.from(bytes));
+      // Each page is a full skin page (menus, scripts, footer): keep its content area only.
       const pages = entries
         .filter(e => e.name.startsWith('pages/') && e.name.endsWith('.html'))
-        .map(e => ({ path: e.name, html: e.data.toString('utf8') }));
+        .map(e => ({ path: e.name, html: pageContentHtml(e.data.toString('utf8')) }));
       return { space, page, format, pages, files_omitted: entries.length - pages.length, content_type: 'text/html', size_bytes: bytes.length };
     }
     const defaults = { pdf: 'application/pdf', xar: 'application/zip' };
@@ -1758,11 +1767,19 @@ export class XWikiClient {
   async comparePageVersions(space: string, page: string, fromVersion: string, toVersion?: string, context = 3): Promise<VersionComparison> {
     const a = await this.getPageVersion(space, page, fromVersion);
     const b = toVersion ? await this.getPageVersion(space, page, toVersion) : await this.getPage(space, page);
+    // A page or version read is dated by its last content change, so a version that only changed
+    // objects, tags or attachments would show an older date. The history has each version's own.
+    const history = await this.getPageHistory(space, page, 1000);
+    const side = (p: Page, fallback: string) => {
+      const version = p.version ?? fallback;
+      const h = history.find(e => e.version === version);
+      return { version, author: p.author, date: h?.modified_date ?? p.modified_date };
+    };
     const { diff, added, removed } = unifiedDiff(a.content, b.content, context);
     return {
       page: `${space}.${page}`,
-      from: { version: a.version ?? fromVersion, author: a.author, date: a.modified_date },
-      to: { version: b.version ?? toVersion ?? 'current', author: b.author, date: b.modified_date },
+      from: side(a, fromVersion),
+      to: side(b, toVersion ?? 'current'),
       ...(a.title !== b.title ? { title_change: { from: a.title, to: b.title } } : {}),
       ...(a.syntax !== b.syntax ? { syntax_change: { from: a.syntax, to: b.syntax } } : {}),
       lines_added: added,
@@ -1962,4 +1979,22 @@ export function readZip(buf: Buffer): Array<{ name: string; data: Buffer }> {
     files.push({ name, data: method === 8 ? inflateRawSync(raw) : Buffer.from(raw) });
   }
   return files;
+}
+
+/**
+ * The inner HTML of a skin page's content area (the element with id "xwikicontent"), or, when
+ * there is none, the whole page without its script elements.
+ */
+export function pageContentHtml(html: string): string {
+  const open = /<div\b[^>]*\bid="xwikicontent"[^>]*>/i.exec(html);
+  if (!open) return html.replace(/<script\b[\s\S]*?<\/script>/gi, '');
+  const from = open.index + open[0].length;
+  const tag = /<(\/?)div\b[^>]*>/gi;
+  tag.lastIndex = from;
+  let depth = 1;
+  for (let m = tag.exec(html); m; m = tag.exec(html)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return html.slice(from, m.index).trim();
+  }
+  return html.slice(from).trim();
 }

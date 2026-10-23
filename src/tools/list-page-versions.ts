@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { XWikiError } from '../client.js';
 import type { XWikiClient } from '../client.js';
 
 export function register(server: McpServer, client: XWikiClient): void {
@@ -14,7 +15,15 @@ export function register(server: McpServer, client: XWikiClient): void {
       }),
     },
     async ({ space, page, limit }) => {
-      const history = await client.getPageHistory(space, page, limit);
+      let history;
+      try {
+        history = await client.getPageHistory(space, page, limit);
+      } catch (e) {
+        if (e instanceof XWikiError && e.status === 404) {
+          return { content: [{ type: 'text', text: `Page not found: ${space}/${page}` }], isError: true };
+        }
+        throw e;
+      }
       return {
         content: [
           {

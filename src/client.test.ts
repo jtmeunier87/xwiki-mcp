@@ -162,6 +162,17 @@ describe('getPage', () => {
 describe('search scope prefix', () => {
   const emptyResponse = { searchResults: [], totalResults: 0 };
 
+  it('searches a space through its own search resource, not a space parameter', async () => {
+    const fetch = mockFetch(emptyResponse);
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().search('foo', 'content', 'Docs.Guides', 0, 10);
+
+    const url = new URL(fetch.mock.calls[0][0]);
+    expect(url.pathname).toBe('/rest/wikis/xwiki/spaces/Docs/spaces/Guides/search');
+    expect(url.searchParams.get('space')).toBeNull();
+  });
+
   it('passes raw query for content scope', async () => {
     const fetch = mockFetch(emptyResponse);
     vi.stubGlobal('fetch', fetch);
@@ -192,15 +203,6 @@ describe('search scope prefix', () => {
     expect(new URL(url).searchParams.get('q')).toBe('name:foo');
   });
 
-  it('adds space param when space is specified', async () => {
-    const fetch = mockFetch(emptyResponse);
-    vi.stubGlobal('fetch', fetch);
-
-    await new XWikiClient().search('foo', 'content', 'MySpace', 0, 10);
-
-    const url: string = fetch.mock.calls[0][0];
-    expect(new URL(url).searchParams.get('space')).toBe('MySpace');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1891,6 +1893,7 @@ describe('comparePageVersions', () => {
     vi.stubGlobal('fetch', statefulFetch({
       'GET /spaces/Main/pages/WebHome/history/1.1': version('1.1', 'Old', 'a\nb\nc\nd'),
       'GET /spaces/Main/pages/WebHome/history/2.1': version('2.1', 'New', 'a\nB\nc\nd\ne'),
+      'GET /spaces/Main/pages/WebHome/history': { body: { historySummaries: [{ version: '2.1' }, { version: '1.1' }] } },
     }));
 
     const cmp = await new XWikiClient().comparePageVersions('Main', 'WebHome', '1.1', '2.1', 1);
@@ -1900,6 +1903,37 @@ describe('comparePageVersions', () => {
     expect(cmp.lines_added).toBe(2);
     expect(cmp.lines_removed).toBe(1);
     expect(cmp.diff).toBe('@@ -1,4 +1,5 @@\n a\n-b\n+B\n c\n d\n+e');
+  });
+
+  it('gives the current version its own date, not the page\'s last content change', async () => {
+    vi.stubGlobal('fetch', statefulFetch({
+      // Page and version reads are dated by the last content change (2.1), even after object-only saves.
+      'GET /spaces/Main/pages/WebHome': { body: { title: 'T', content: 'a\nb', version: '9.1', modified: 2000, author: 'XWiki.JaneDoe' } },
+      'GET /spaces/Main/pages/WebHome/history/1.1': { body: { title: 'T', content: 'a', version: '1.1', modified: 1000 } },
+      'GET /spaces/Main/pages/WebHome/history': { body: { historySummaries: [
+        { version: '9.1', modified: 9000 }, { version: '2.1', modified: 2000 }, { version: '1.1', modified: 1000 },
+      ] } },
+    }));
+
+    const cmp = await new XWikiClient().comparePageVersions('Main', 'WebHome', '1.1');
+
+    expect(cmp.to).toEqual({ version: '9.1', author: 'XWiki.JaneDoe', date: new Date(9000).toISOString() });
+    expect(cmp.from.date).toBe(new Date(1000).toISOString());
+    expect(cmp.lines_added).toBe(1);
+  });
+});
+
+describe('pageContentHtml', () => {
+  it('keeps the content area of a skin page, nested elements included', async () => {
+    const { pageContentHtml } = await import('./client.js');
+    const html = '<html><script>x()</script><nav><div>menu</div></nav><div class="row"><div id="xwikicontent" class="col">'
+      + '<div class="box"><p>Hi</p></div><p>There</p></div></div><footer><div>f</div></footer></html>';
+    expect(pageContentHtml(html)).toBe('<div class="box"><p>Hi</p></div><p>There</p>');
+  });
+
+  it('drops scripts when there is no content area', async () => {
+    const { pageContentHtml } = await import('./client.js');
+    expect(pageContentHtml('<p>a</p><script>b()</script><p>c</p>')).toBe('<p>a</p><p>c</p>');
   });
 });
 
