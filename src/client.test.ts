@@ -155,6 +155,47 @@ describe('getPage', () => {
   });
 });
 
+describe('updatePage', () => {
+  // A sheet's stored title is Velocity; REST returns it rendered in `title` and as-is in `rawTitle`.
+  const sheet = {
+    title: 'Example Sheet',
+    rawTitle: "#if($doc.documentReference.name == 'ExampleSheet')Example Sheet#{else}$doc.name#end",
+    content: '{{velocity}}old{{/velocity}}',
+    syntax: 'xwiki/2.1',
+    version: '4.1',
+  };
+
+  it('keeps the stored (raw) title when only the content changes', async () => {
+    const fetch = mockFetch(sheet);
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().updatePage('Sandbox.Code', 'ExampleSheet', '{{velocity}}new{{/velocity}}');
+
+    const put = fetch.mock.calls.find(([, o]) => o?.method === 'PUT');
+    expect(put![1].body).toContain(
+      '<title>#if($doc.documentReference.name == &apos;ExampleSheet&apos;)Example Sheet#{else}$doc.name#end</title>',
+    );
+    expect(put![1].body).not.toContain('<title>Example Sheet</title>');
+  });
+
+  it('writes a title it is given', async () => {
+    const fetch = mockFetch(sheet);
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().updatePage('Sandbox.Code', 'ExampleSheet', undefined, 'Renamed');
+
+    const put = fetch.mock.calls.find(([, o]) => o?.method === 'PUT');
+    expect(put![1].body).toContain('<title>Renamed</title>');
+  });
+
+  it('getPage reports raw_title only when it differs from the rendered title', async () => {
+    vi.stubGlobal('fetch', mockFetch(sheet));
+    expect((await new XWikiClient().getPage('Sandbox.Code', 'ExampleSheet')).raw_title).toBe(sheet.rawTitle);
+    vi.stubGlobal('fetch', mockFetch({ ...sheet, rawTitle: 'Example Sheet' }));
+    expect((await new XWikiClient().getPage('Sandbox.Code', 'ExampleSheet')).raw_title).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // search — scope prefix
 // ---------------------------------------------------------------------------

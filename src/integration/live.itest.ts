@@ -207,6 +207,19 @@ describe.skipIf(!URL_)('live XWiki', () => {
     expect(code.property.value).toBe('.a { color: red; }\n.b { color: blue; }');
   });
 
+  it('keeps a Velocity page title when the content is updated or edited', async () => {
+    // XWiki returns the title rendered; writing that back would replace the stored Velocity code.
+    const sp = `${RUN}.Title`;
+    const raw = "#if($doc.documentReference.name == 'Sheet')Example Sheet#{else}$doc.name#end";
+    await call('xwiki_create_page', { space: sp, page: 'Sheet', title: raw, content: 'one' });
+    expect((await call('xwiki_get_page', { space: sp, page: 'Sheet' })).raw_title).toBe(raw);
+    await call('xwiki_update_page', { space: sp, page: 'Sheet', content: 'two' });
+    expect((await call('xwiki_get_page', { space: sp, page: 'Sheet' })).raw_title).toBe(raw);
+    await call('xwiki_replace_in_page', { space: sp, page: 'Sheet', edits: [{ old_text: 'two', new_text: 'three' }] });
+    const after = await call('xwiki_get_page', { space: sp, page: 'Sheet' });
+    expect(after).toMatchObject({ content: 'three', title: 'Example Sheet', raw_title: raw });
+  });
+
   it('renders a record page through its class sheet', async () => {
     // A record page with no content of its own, displayed by the sheet bound to its class:
     // the plain render must show the sheet's output, as a reader sees the page.
