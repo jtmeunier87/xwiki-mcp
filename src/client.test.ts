@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { XWikiClient, XWikiError } from './client.js';
+import { XWikiClient, XWikiError, splitSpace } from './client.js';
 
 // Mock config so tests don't need real env vars
 vi.mock('./config.js', () => ({
@@ -99,6 +99,23 @@ describe('spacePath (nested spaces)', () => {
 
     const url: string = fetch.mock.calls[0][0];
     expect(url).toContain(encodeURIComponent('Тест'));
+  });
+
+  it('keeps an escaped dot inside a space name', async () => {
+    const fetch = mockFetch({ pageSummaries: [], totalResults: 0 });
+    vi.stubGlobal('fetch', fetch);
+
+    await new XWikiClient().listPages('Docs.1\\.2 Notes', 0, 10);
+
+    const url: string = fetch.mock.calls[0][0];
+    expect(url).toContain('/spaces/Docs/spaces/1.2%20Notes/pages');
+  });
+
+  it('splits on unescaped dots only', () => {
+    expect(splitSpace('Main')).toEqual(['Main']);
+    expect(splitSpace('Docs.Guides')).toEqual(['Docs', 'Guides']);
+    expect(splitSpace('Docs.1\\.2 Notes.Sub')).toEqual(['Docs', '1.2 Notes', 'Sub']);
+    expect(splitSpace('Docs.a\\\\.b')).toEqual(['Docs', 'a\\', 'b']);
   });
 });
 
@@ -1558,6 +1575,20 @@ describe('listClassObjects', () => {
     expect(String(fetch.mock.calls[0][0])).toContain('order=date');
     expect(objects[0].properties).toBeUndefined();
     expect(pagination.has_more).toBe(false);
+  });
+
+  it('reads objects on pages whose space name has an escaped dot', async () => {
+    const fetch = routeFetch({
+      'GET /classes/Sandbox.Code.ExampleClass/objects': { body: { objectSummaries: [
+        { className: 'Sandbox.Code.ExampleClass', number: 0, space: 'Docs.1\\.2 Notes', pageName: 'WebHome' },
+      ] } },
+      'GET /spaces/Docs/spaces/1.2%20Notes/pages/WebHome/objects/Sandbox.Code.ExampleClass/0': { body: { className: 'Sandbox.Code.ExampleClass', number: 0, properties: [{ name: 'status', value: 'open' }] } },
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const { objects } = await new XWikiClient().listClassObjects('Sandbox.Code.ExampleClass', 0, 10);
+
+    expect(objects[0]).toMatchObject({ space: 'Docs.1\\.2 Notes', page_name: 'WebHome', properties: { status: 'open' } });
   });
 });
 
