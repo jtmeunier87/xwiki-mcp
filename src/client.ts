@@ -18,6 +18,24 @@ function isFatal(e: unknown): boolean {
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/**
+ * Split a space reference in dot notation into its space names. A dot or backslash that is part
+ * of a name is escaped with a backslash, as XWiki writes references (`Docs.1\.2 Notes` is the
+ * space `1.2 Notes` inside `Docs`): `\.` is a dot in the name and `\\` one backslash.
+ */
+export function splitSpace(space: string): string[] {
+  const names: string[] = [];
+  let name = '';
+  for (let i = 0; i < space.length; i++) {
+    const c = space[i];
+    if (c === '\\' && i + 1 < space.length) name += space[++i];
+    else if (c === '.') { names.push(name); name = ''; }
+    else name += c;
+  }
+  names.push(name);
+  return names;
+}
+
 export class XWikiClient {
   private readonly wikiBase: string;
   private csrfToken: string | null = null;
@@ -166,7 +184,7 @@ export class XWikiClient {
 
   /** Convert "Space1.SubSpace.Child" → "/spaces/Space1/spaces/SubSpace/spaces/Child" */
   private spacePath(space: string): string {
-    return '/' + space.split('.').map(s => `spaces/${encodeURIComponent(s)}`).join('/');
+    return '/' + splitSpace(space).map(s => `spaces/${encodeURIComponent(s)}`).join('/');
   }
 
   // ---------------------------------------------------------------------------
@@ -467,7 +485,7 @@ export class XWikiClient {
     filename: string,
   ): Promise<{ name: string; content_base64: string; mime_type?: string; size_bytes: number; download_url: string }> {
     // Build the direct download URL (not through REST path — attachments served via /bin/download)
-    const spaceParts = space.split('.').map(s => encodeURIComponent(s)).join('/');
+    const spaceParts = splitSpace(space).map(s => encodeURIComponent(s)).join('/');
     const downloadUrl = `${config.baseUrl}/bin/download/${spaceParts}/${encodeURIComponent(page)}/${encodeURIComponent(filename)}`;
 
     let response: Response;
@@ -679,7 +697,7 @@ export class XWikiClient {
 
   /** POST a class editor action URL with the CSRF token as form_token. */
   private async postClassAction(action: 'propupdate' | 'propadd' | 'propdisable' | 'propenable', className: string, form: URLSearchParams): Promise<void> {
-    const parts = className.split('.');
+    const parts = splitSpace(className);
     if (parts.length < 2) throw new XWikiError(`Not a full class name: ${className}`, 400);
     const actionPath = parts.map(encodeURIComponent).join('/');
     const url = `${config.baseUrl}/bin/${action}/${actionPath}`;
@@ -1008,7 +1026,7 @@ export class XWikiClient {
       throw new XWikiError(`Version ${version} not found in the history of ${space}/${page}`, 404);
     }
 
-    const actionPath = [...space.split('.'), page].map(encodeURIComponent).join('/');
+    const actionPath = [...splitSpace(space), page].map(encodeURIComponent).join('/');
     const url = new URL(`${config.baseUrl}/bin/rollback/${actionPath}`);
     url.searchParams.set('rev', version);
     url.searchParams.set('confirm', '1');
@@ -1914,7 +1932,7 @@ export class XWikiClient {
 
   /** "/Docs/Guides/Setup" style path for /bin/{action}/ URLs. */
   private actionPath(space: string, page: string): string {
-    return [...space.split('.'), page].map(encodeURIComponent).join('/');
+    return [...splitSpace(space), page].map(encodeURIComponent).join('/');
   }
 
   /**

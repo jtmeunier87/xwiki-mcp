@@ -185,6 +185,17 @@ describe.skipIf(!URL_)('live XWiki', () => {
     expect(onPage.objects).toEqual([expect.objectContaining({ class_name: cls, number: 0, properties: { status: 'done' } })]);
   });
 
+  it('reads objects on a page whose space name has a dot', async () => {
+    const cls = `${RUN}.Code.DotClass`;
+    const sp = `${RUN}.Dots.1\\.2 Notes`;
+    await call('xwiki_add_class_property', { class_name: cls, property: 'status', type: 'String' });
+    await call('xwiki_create_page', { space: sp, page: 'WebHome', title: '1.2 Notes', content: 'x' });
+    await call('xwiki_create_object', { space: sp, page: 'WebHome', class_name: cls, properties: { status: 'open' } });
+    const all = await call('xwiki_list_class_objects', { class_name: cls });
+    expect(all.objects).toEqual([expect.objectContaining({ space: sp, page_name: 'WebHome', properties: { status: 'open' } })]);
+    expect((await call('xwiki_get_object', { space: all.objects[0].space, page: 'WebHome', class_name: cls, object_number: 0 })).properties).toEqual({ status: 'open' });
+  });
+
   it('edits page content and an object property in place', async () => {
     const sp = `${RUN}.Edit`;
     await page('Edit', 'Sheet', '{{velocity}}\n#set($layout = "grid-3x2")\n$layout\n{{/velocity}}');

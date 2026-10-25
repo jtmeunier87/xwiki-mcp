@@ -338,7 +338,7 @@ Export a page as a file. `pdf` and `xar` come back as an MCP embedded resource (
 
 - **CSRF tokens**: Cached from GET response headers (`XWiki-Form-Token`), auto-refreshed on 403. Required for xWiki 14.10.8+.
 - **Write bodies**: Page writes use `application/xml` bodies; object properties are sent as a form body (`property#name=value`), which is what xWiki actually saves.
-- **Nested spaces**: Dot notation (`Space.SubSpace`) converts to xWiki's `/spaces/X/spaces/Y/` URL format.
+- **Nested spaces**: Dot notation (`Space.SubSpace`) converts to xWiki's `/spaces/X/spaces/Y/` URL format. A dot that is part of a space name is escaped with a backslash, as XWiki writes references (`Docs.1\.2 Notes` is the space `1.2 Notes` inside `Docs`; `\\` is a backslash); the `space` that list tools return is already in this form, so it can be passed back as is.
 - **xWiki API typo**: Classes endpoint returns `clazzs` (not `classes`) — handled transparently.
 - **History timestamps**: History endpoints return Unix milliseconds — automatically converted to ISO strings.
 - **Modifier prefix**: `xwiki:XWiki.` prefix stripped from all user references in display output.
