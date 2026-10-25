@@ -167,3 +167,81 @@ describe('htmlToText', () => {
     expect(htmlToText('<p><div class="wikimodel-emptyline"></div></p>')).toBe('');
   });
 });
+
+describe('xwiki_search_objects', () => {
+  type Batch = import('../types.js').ClassObjectScanBatch;
+  const values = ['{{code language="css"}}a{{/code}}', 'plain code here', 'x {{CODE}} y {{code}} z', ''];
+  /** A fake scan over one object per page, a batch of 2 at a time; position 1 is skipped. */
+  function fakeClient(props: Array<Record<string, unknown>>) {
+    return {
+      async *scanClassObjects(_c: string, start: number, count: number): AsyncGenerator<Batch> {
+        for (let offset = start; offset < start + count; offset += 2) {
+          const end = Math.min(offset + 2, start + count);
+          const objects = [];
+          for (let p = offset; p < Math.min(end, props.length); p++) {
+            objects.push({ position: p, object: { page: `Docs.P${p}`, space: 'Docs', page_name: `P${p}`, number: 0, properties: props[p] } });
+          }
+          yield { start: offset, end, objects, skipped: offset === 0 ? [{ page: 'Docs.Bad', number: 3, error: 'XWiki server error: 500' }] : [], exhausted: objects.length === 0 };
+          if (objects.length === 0) return;
+        }
+      },
+    };
+  }
+  const client = fakeClient(values.map(v => ({ code: v, count: 3 })));
+  const run = async (args: Record<string, unknown>) => {
+    const { register } = await import('./search-objects.js');
+    const r = await handlerOf(register, client)({
+      class_name: 'XWiki.StyleSheetExtension', mode: 'contains', ignore_case: false, include_snippet: true, max_results: 100, start: 0, scan_limit: 500, ...args,
+    });
+    return r.isError ? r : JSON.parse(r.content[0].text);
+  };
+
+  it('finds a literal substring, case-sensitively by default, and reports skipped objects', async () => {
+    const r = await run({ pattern: '{{code' });
+    expect(r.matches).toEqual([
+      { page: 'Docs.P0', number: 0, field: 'code', count: 1, snippet: values[0] },
+      { page: 'Docs.P2', number: 0, field: 'code', count: 1, snippet: values[2] },
+    ]);
+    expect(r).toMatchObject({ match_count: 2, objects_matched: 2, objects_read: 4, has_more: false, skipped: [{ page: 'Docs.Bad', number: 3 }] });
+    expect(r.next_start).toBeUndefined();
+  });
+
+  it('ignores case, matches regexes and searches only the named fields', async () => {
+    expect((await run({ pattern: '{{code', ignore_case: true })).matches[1]).toMatchObject({ page: 'Docs.P2', count: 2 });
+    expect((await run({ pattern: '\\{\\{/?code\\}\\}', mode: 'regex' })).matches.map((m: { count: number }) => m.count)).toEqual([1, 1]);
+    expect((await run({ pattern: '3', fields: ['count'] })).match_count).toBe(4);
+    expect((await run({ pattern: '3' })).match_count).toBe(0);
+  });
+
+  it('stops at max_results and scan_limit with next_start to continue', async () => {
+    const byResults = await run({ pattern: 'code', max_results: 1 });
+    expect(byResults).toMatchObject({ match_count: 1, has_more: true, next_start: 1, scanned: { start: 0, end: 1 } });
+    const byScan = await run({ pattern: 'code', scan_limit: 2, include_snippet: false });
+    expect(byScan).toMatchObject({ objects_read: 2, has_more: true, next_start: 2 });
+    expect(byScan.matches[0].snippet).toBeUndefined();
+  });
+
+  it('cuts long values to a snippet around the first match', async () => {
+    const long = `${'a'.repeat(300)}NEEDLE${'b'.repeat(300)}`;
+    const { register } = await import('./search-objects.js');
+    const r = await handlerOf(register, fakeClient([{ code: long }]))({
+      class_name: 'C', pattern: 'NEEDLE', mode: 'contains', ignore_case: false, include_snippet: true, max_results: 100, start: 0, scan_limit: 10,
+    });
+    const snippet = JSON.parse(r.content[0].text).matches[0].snippet as string;
+    expect(snippet).toBe(`…${'a'.repeat(50)}NEEDLE${'b'.repeat(104)}…`);
+  });
+
+  it('returns a clear error for an invalid regex', async () => {
+    const r = await run({ pattern: '(', mode: 'regex' });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/^Invalid regex: /);
+  });
+
+  it('reports a missing class', async () => {
+    const { register } = await import('./search-objects.js');
+    const { XWikiError } = await import('../client.js');
+    const missing = { async *scanClassObjects(): AsyncGenerator<Batch> { throw new XWikiError('Not found', 404); } };
+    const r = await handlerOf(register, missing)({ class_name: 'No.Such', pattern: 'x', mode: 'contains', start: 0, scan_limit: 5, max_results: 5 });
+    expect(r.content[0].text).toBe('Class not found: No.Such');
+  });
+});

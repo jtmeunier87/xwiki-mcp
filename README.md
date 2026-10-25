@@ -10,7 +10,7 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 53 tools across 11 categories
+## 54 tools across 11 categories
 
 | Category | Count | Tools |
 |---|---|---|
@@ -21,7 +21,7 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 | **Attachments** | 7 | `xwiki_list_attachments`, `xwiki_search_attachments`, `xwiki_list_attachment_versions`, `xwiki_upload_attachment`, `xwiki_download_attachment`, `xwiki_move_attachment`, `xwiki_delete_attachment` |
 | **Tags** | 5 | `xwiki_get_page_tags`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_list_tags`, `xwiki_list_pages_by_tag` |
 | **Classes** | 6 | `xwiki_list_classes`, `xwiki_get_class`, `xwiki_list_class_property_values`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_set_class_property_enabled` |
-| **Objects** | 7 | `xwiki_list_page_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
+| **Objects** | 8 | `xwiki_list_page_objects`, `xwiki_get_object`, `xwiki_get_object_property`, `xwiki_list_class_objects`, `xwiki_search_objects`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_delete_object` |
 | **History** | 5 | `xwiki_list_page_versions`, `xwiki_get_page_version`, `xwiki_compare_page_versions`, `xwiki_rollback_page`, `xwiki_list_recent_changes` |
 | **Search & Query** | 2 | `xwiki_search_pages`, `xwiki_query` |
 | **Render & Export** | 2 | `xwiki_render_page`, `xwiki_export_page` |
@@ -74,7 +74,7 @@ Images are published to `ghcr.io/jtmeunier87/xwiki-mcp` (linux/amd64 and linux/a
 ```yaml
 services:
   xwiki-mcp:
-    image: ghcr.io/jtmeunier87/xwiki-mcp:0.21.1
+    image: ghcr.io/jtmeunier87/xwiki-mcp:0.22.0
     entrypoint: ["supergateway", "--stdio", "node dist/index.js", "--outputTransport", "streamableHttp",
                  "--port", "8000", "--healthEndpoint", "/healthz"]
     environment:
@@ -126,9 +126,9 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 
 | Mode | Settings | Tools |
 |---|---|---|
-| Read/write, no delete (default) | — | 49: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`, `xwiki_delete_comment` |
-| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 53 |
-| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 31 read tools |
+| Read/write, no delete (default) | — | 50: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`, `xwiki_delete_comment` |
+| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 54 |
+| Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 32 read tools |
 
 Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_deleted_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
 
@@ -285,6 +285,11 @@ Read a single named property from an XObject — more efficient than `xwiki_get_
 #### `xwiki_list_class_objects`
 List the objects of one class across the whole wiki with the page each one is on, ordered by page (or by page date with `order: "date"`). `include_properties` (default true) adds every property value, one request per object; without it each row carries XWiki's `headline` (the first property's value) only when that is not empty. Paged with `start` / `limit` (default 50); pages the account cannot view are left out, so keep paging while `has_more` is true.
 
+#### `xwiki_search_objects`
+Find the objects of one class whose property values contain a string (`mode: "contains"`, the default) or match a JavaScript regular expression (`mode: "regex"`), case-sensitive unless `ignore_case` is true. Use it for exact matches that full-text search cannot give: Solr search is tokenized (searching for `{{code` finds every page with the word "code"), and recent XWiki versions refuse XWQL / HQL on the REST query endpoint unless an administrator allows them. The server pages through the class's objects with their properties and returns only the matches, one per object field: page, object number, field, match count and (with `include_snippet`, the default) up to 160 characters around the first match, never the whole value. `fields` limits the search to named properties (default: every string-valued property).
+
+A call scans at most `scan_limit` objects (default 500, max 2000) from `start` and stops once `max_results` matches are found (default 100); it reports `objects_read`, `scanned`, and `next_start` with `has_more` to continue. Objects that fail to load are listed in `skipped` (by page and number, or by list position when the listing itself failed; failing batches are retried in smaller batches) instead of failing the call. An invalid regex returns an error; patterns are limited to 500 characters.
+
 #### `xwiki_create_object`
 Create a new XObject on a page with class name and property key-value map.
 
@@ -385,6 +390,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.22.0 — `xwiki_search_objects`: exact substring or regex search in the property values of a class's objects, returning compact matches
 - [x] v0.21.1 — `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page` and `xwiki_copy_page` keep a page's stored title. Before, they wrote back the rendered title, so saving a sheet whose title is Velocity code replaced that code with its output and every record of the class showed the sheet's name. `xwiki_get_page` returns `raw_title` when it differs from the rendered title
 - [x] v0.21.0 — `xwiki_get_page_tree` returns `root_page`: the root page's own row with its object classes (before, only descendants were reported, so the root's objects were never listed); `class_totals` includes the root. `xwiki_render_page` renders a page as a reader sees it, through its sheet (plain text came back empty for a page whose sheet draws its view inside an html macro, because xWiki's plain renderer drops html macro output). Tree and children docs say hidden pages need the account's Display Hidden Pages preference
 - [x] v0.20.1 — `xwiki_replace_in_page` (first released version; a `v0.20.0` tag was pushed early on the 0.19.0 code and is not a release): targeted find-and-replace edits to page content or one object property, each match unique, all or nothing, optional version check, read back after saving

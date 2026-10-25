@@ -178,6 +178,9 @@ describe.skipIf(!URL_)('live XWiki', () => {
     const all = await call('xwiki_list_class_objects', { class_name: cls });
     expect(all.objects).toHaveLength(1);
     expect(all.objects[0]).toMatchObject({ page: `${RUN}.Data.Record`, properties: { status: 'done' } });
+    const found = await call('xwiki_search_objects', { class_name: cls, pattern: 'DON', ignore_case: true });
+    expect(found).toMatchObject({ match_count: 1, has_more: false, matches: [{ page: `${RUN}.Data.Record`, number: 0, field: 'status', count: 1, snippet: 'done' }] });
+    expect((await call('xwiki_search_objects', { class_name: cls, pattern: 'DON' })).match_count).toBe(0);
     const onPage = await call('xwiki_list_page_objects', { space: `${RUN}.Data`, page: 'Record', class_name: cls });
     expect(onPage.objects).toEqual([expect.objectContaining({ class_name: cls, number: 0, properties: { status: 'done' } })]);
   });

@@ -476,6 +476,25 @@ export interface ClassObject {
   properties?: Record<string, unknown>;
 }
 
+/** An object a class scan could not read: by page and number, or by list position when the listing itself failed. */
+export interface SkippedObject {
+  page?: string;
+  number?: number;
+  /** Position in the class's object list, when the page is not known */
+  position?: number;
+  error: string;
+}
+
+/** One batch of a class scan: the objects at positions [start, end) read in full, and what was skipped. */
+export interface ClassObjectScanBatch {
+  start: number;
+  end: number;
+  objects: Array<{ position: number; object: ClassObject }>;
+  skipped: SkippedObject[];
+  /** True when the batch was empty: the class has no objects from start on */
+  exhausted: boolean;
+}
+
 export interface AttachmentSearchResult {
   name: string;
   page: string;

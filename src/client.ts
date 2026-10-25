@@ -1,6 +1,6 @@
 import { inflateRawSync } from 'node:zlib';
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, ClassObjectScanBatch, SkippedObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
 import { unifiedDiff } from './diff.js';
 import { htmlToText } from './html-text.js';
 
@@ -10,6 +10,13 @@ export class XWikiError extends Error {
     this.name = 'XWikiError';
   }
 }
+
+/** Errors a scan must not skip past: no connection, or the credentials are refused. */
+function isFatal(e: unknown): boolean {
+  return !(e instanceof XWikiError) || e.status === undefined || e.status === 401 || e.status === 403;
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export class XWikiClient {
   private readonly wikiBase: string;
@@ -1268,6 +1275,24 @@ export class XWikiClient {
     order: 'page' | 'date' = 'page',
     includeProperties = true,
   ): Promise<{ objects: ClassObject[]; pagination: Pagination }> {
+    const { objects, returned } = await this.listClassObjectSummaries(className, start, limit, order);
+    if (includeProperties) {
+      const full = await this.mapLimit(objects, 6, o => this.getObject(o.space, o.page_name, className, o.number));
+      objects.forEach((o, i) => { o.properties = full[i].properties; });
+    }
+    return {
+      objects,
+      pagination: { start, limit, has_more: returned === limit },
+    };
+  }
+
+  /** One page of a class's object summaries (GET /classes/{className}/objects), mapped. */
+  private async listClassObjectSummaries(
+    className: string,
+    start: number,
+    limit: number,
+    order: 'page' | 'date' = 'page',
+  ): Promise<{ objects: ClassObject[]; returned: number }> {
     const params: Record<string, string | number> = { start, number: limit };
     if (order === 'date') params['order'] = 'date';
     const data = await this.get<{ objectSummaries?: XWikiClassObjectSummaryRaw[] }>(
@@ -1286,14 +1311,75 @@ export class XWikiClient {
         headline: o.headline || undefined,
       };
     });
-    if (includeProperties) {
-      const full = await this.mapLimit(objects, 6, o => this.getObject(o.space, o.page_name, className, o.number));
-      objects.forEach((o, i) => { o.properties = full[i].properties; });
+    return { objects, returned: summaries.length };
+  }
+
+  /**
+   * Read the objects of a class at positions [start, start + count) in full, batch by batch,
+   * for tools that filter them server-side. A batch whose listing fails is retried in halves
+   * down to single positions, and an object whose read fails is skipped; both are reported in
+   * the batch's `skipped` instead of failing the scan. Connection and authentication errors,
+   * and a class that does not exist, still throw.
+   */
+  async *scanClassObjects(className: string, start: number, count: number, batchSize = 100): AsyncGenerator<ClassObjectScanBatch> {
+    const end = start + count;
+    let classChecked = false;
+    for (let offset = start; offset < end; offset += batchSize) {
+      const n = Math.min(batchSize, end - offset);
+      const skipped: SkippedObject[] = [];
+      let listed: Array<{ position: number; object: ClassObject }>;
+      try {
+        listed = await this.listPositions(className, offset, n);
+      } catch (e) {
+        if (isFatal(e)) throw e;
+        // Every batch of a missing class fails; check once that the class exists before splitting.
+        if (!classChecked) await this.getClass(className);
+        listed = await this.listPositionsSplit(className, offset, n, skipped);
+      }
+      classChecked = true;
+      const read = await this.mapLimit(listed, 6, async entry => {
+        const o = entry.object;
+        try {
+          o.properties = (await this.getObject(o.space, o.page_name, className, o.number)).properties;
+          return entry;
+        } catch (e) {
+          if (isFatal(e)) throw e;
+          skipped.push({ page: o.page, number: o.number, error: errorText(e) });
+          return undefined;
+        }
+      });
+      const objects = read.filter((x): x is { position: number; object: ClassObject } => x !== undefined);
+      const exhausted = listed.length === 0 && skipped.length === 0;
+      yield { start: offset, end: offset + n, objects, skipped, exhausted };
+      if (exhausted) return;
     }
-    return {
-      objects,
-      pagination: { start, limit, has_more: summaries.length === limit },
-    };
+  }
+
+  private async listPositions(className: string, start: number, n: number): Promise<Array<{ position: number; object: ClassObject }>> {
+    const { objects } = await this.listClassObjectSummaries(className, start, n);
+    return objects.map((object, i) => ({ position: start + i, object }));
+  }
+
+  /** List positions [start, start + n) in halves until single positions; record those that still fail. */
+  private async listPositionsSplit(
+    className: string,
+    start: number,
+    n: number,
+    skipped: SkippedObject[],
+  ): Promise<Array<{ position: number; object: ClassObject }>> {
+    if (n > 1) {
+      const half = Math.ceil(n / 2);
+      const first = await this.listPositionsSplit(className, start, half, skipped);
+      const second = await this.listPositionsSplit(className, start + half, n - half, skipped);
+      return [...first, ...second];
+    }
+    try {
+      return await this.listPositions(className, start, 1);
+    } catch (e) {
+      if (isFatal(e)) throw e;
+      skipped.push({ position: start, error: errorText(e) });
+      return [];
+    }
   }
 
   /**

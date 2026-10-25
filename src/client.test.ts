@@ -1561,6 +1561,80 @@ describe('listClassObjects', () => {
   });
 });
 
+describe('scanClassObjects', () => {
+  const cls = 'Sandbox.Code.ExampleClass';
+
+  /** A wiki with `count` objects of the class, one per page Docs.P{i}; listing a range with a bad position fails. */
+  function classFetch(count: number, opts: { badList?: number[]; badRead?: number[]; noClass?: boolean } = {}) {
+    return vi.fn().mockImplementation((url: string) => {
+      const u = new URL(url);
+      const path = u.pathname.replace('/rest/wikis/xwiki', '');
+      const reply = (status: number, body: unknown = {}) =>
+        Promise.resolve({
+          ok: status < 300, status, statusText: String(status),
+          json: () => Promise.resolve(body), text: () => Promise.resolve(status < 300 ? '' : 'Class not found'),
+          headers: { get: () => null },
+        });
+      if (path === `/classes/${cls}`) return reply(opts.noClass ? 404 : 200, { id: cls, name: cls, properties: [] });
+      if (path === `/classes/${cls}/objects`) {
+        if (opts.noClass) return reply(404);
+        const start = Number(u.searchParams.get('start'));
+        const n = Number(u.searchParams.get('number'));
+        const range = Array.from({ length: Math.max(0, Math.min(n, count - start)) }, (_, i) => start + i);
+        if (range.some(i => opts.badList?.includes(i))) return reply(500);
+        return reply(200, { objectSummaries: range.map(i => ({ className: cls, number: 0, space: 'Docs', pageName: `P${i}` })) });
+      }
+      const m = path.match(/^\/spaces\/Docs\/pages\/P(\d+)\/objects\/[^/]+\/0$/);
+      if (m) {
+        const i = Number(m[1]);
+        if (opts.badRead?.includes(i)) return reply(500);
+        return reply(200, { className: cls, number: 0, properties: [{ name: 'code', value: `value ${i}` }] });
+      }
+      return reply(404);
+    });
+  }
+
+  async function collect(gen: AsyncGenerator<import('./types.js').ClassObjectScanBatch>) {
+    const batches = [];
+    for await (const b of gen) batches.push(b);
+    return batches;
+  }
+
+  it('reads the objects in batches with their positions and stops at the end of the list', async () => {
+    const fetch = classFetch(5);
+    vi.stubGlobal('fetch', fetch);
+    const batches = await collect(new XWikiClient().scanClassObjects(cls, 0, 100, 2));
+    expect(batches.map(b => [b.start, b.end, b.objects.length, b.exhausted])).toEqual([[0, 2, 2, false], [2, 4, 2, false], [4, 6, 1, false], [6, 8, 0, true]]);
+    expect(batches[2].objects[0]).toMatchObject({ position: 4, object: { page: 'Docs.P4', properties: { code: 'value 4' } } });
+  });
+
+  it('stops at count', async () => {
+    vi.stubGlobal('fetch', classFetch(50));
+    const batches = await collect(new XWikiClient().scanClassObjects(cls, 10, 5, 100));
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ start: 10, end: 15, exhausted: false });
+    expect(batches[0].objects.map(o => o.position)).toEqual([10, 11, 12, 13, 14]);
+  });
+
+  it('splits a failing batch and skips the positions and objects that cannot be read', async () => {
+    vi.stubGlobal('fetch', classFetch(8, { badList: [5], badRead: [2] }));
+    const [batch] = await collect(new XWikiClient().scanClassObjects(cls, 0, 8, 8));
+    expect(batch.objects.map(o => o.position)).toEqual([0, 1, 3, 4, 6, 7]);
+    expect(batch.skipped).toEqual(expect.arrayContaining([
+      { position: 5, error: expect.stringContaining('500') },
+      { page: 'Docs.P2', number: 0, error: expect.stringContaining('500') },
+    ]));
+    expect(batch.skipped).toHaveLength(2);
+  });
+
+  it('throws for a class that does not exist and for refused credentials', async () => {
+    vi.stubGlobal('fetch', classFetch(0, { noClass: true }));
+    await expect(collect(new XWikiClient().scanClassObjects(cls, 0, 10))).rejects.toMatchObject({ status: 404 });
+    vi.stubGlobal('fetch', mockFetch({}, 401));
+    await expect(collect(new XWikiClient().scanClassObjects(cls, 0, 10))).rejects.toMatchObject({ status: 401 });
+  });
+});
+
 describe('removeTags', () => {
   it('PUTs the remaining tags and reports what was removed', async () => {
     const fetch = routeFetch({

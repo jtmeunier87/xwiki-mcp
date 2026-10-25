@@ -82,6 +82,9 @@ import { register as registerComparePageVersions } from './tools/compare-page-ve
 import { register as registerUpdateComment } from './tools/update-comment.js';
 import { register as registerDeleteComment } from './tools/delete-comment.js';
 
+// v0.22: exact search in object property values
+import { register as registerSearchObjects } from './tools/search-objects.js';
+
 // Toolsets group tools so a deployment can register only what it needs (XWIKI_MCP_TOOLSETS).
 const TOOLSETS = ['pages', 'recycle_bin', 'comments', 'attachments', 'tags', 'classes', 'objects', 'history', 'search', 'export'] as const;
 type Toolset = (typeof TOOLSETS)[number];
@@ -145,6 +148,7 @@ const TOOLS: Array<[Toolset, Access, Register]> = [
   ['objects', 'read', registerGetObject],
   ['objects', 'read', registerGetObjectProperty],
   ['objects', 'read', registerListClassObjects],
+  ['objects', 'read', registerSearchObjects],
   ['objects', 'write', registerCreateObject],
   ['objects', 'write', registerUpdateObject],
   ['objects', 'delete', registerDeleteObject],
@@ -186,7 +190,7 @@ const MODE_TOOLS: Array<[Access, Register]> = TOOLS.filter(([toolset, access]) =
 const INSTRUCTIONS = `Tools for one XWiki instance (${config.baseUrl}). Pages are addressed by space (dot notation for nested spaces, e.g. "Docs.Guides") and page name ("WebHome" for a space's home page).
 - Find: xwiki_search_pages (full text), xwiki_find_pages (by name, space, author), xwiki_query (XWQL / HQL / Solr), xwiki_get_page_tree (every page under a root).
 - Read a page with xwiki_get_page; long content comes in windows (offset / next_offset). List tools are paged with start / limit; keep paging while has_more is true.
-- Structured data lives in objects of classes: xwiki_get_class shows a class's fields; xwiki_list_page_objects (one page) and xwiki_list_class_objects (every object of a class) read them.
+- Structured data lives in objects of classes: xwiki_get_class shows a class's fields; xwiki_list_page_objects (one page) and xwiki_list_class_objects (every object of a class) read them; xwiki_search_objects finds the objects whose values contain exact text.
 - Versions: xwiki_list_page_versions gives version numbers for xwiki_get_page_version, xwiki_compare_page_versions and xwiki_rollback_page.
 - After any write, read the result back to confirm it. The wiki account's own rights apply to every call.`;
 const MODE = config.readOnly ? 'read-only' : config.allowDelete ? 'read/write/delete' : 'read/write, no delete';
