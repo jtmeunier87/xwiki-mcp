@@ -395,6 +395,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.23.1 — The wiki overview (`xwiki_get_page_tree` without a root) and `xwiki_list_spaces` read every space and page; they stopped at about 1000 spaces when XWiki returned a short batch
 - [x] v0.23.0 — `xwiki_get_links`: backlinks and the links written in a page and its objects. `xwiki_get_page` reads a long page by its heading `outline` and one `section`. `xwiki_get_page_tree` without a root gives a wiki overview of the top-level spaces. `xwiki_update_page` and `xwiki_update_object` take `expected_version` and refuse to overwrite a newer version
 - [x] v0.22.0 — `xwiki_search_objects`: exact substring or regex search in the property values of a class's objects, returning compact matches
 - [x] v0.21.1 — `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page` and `xwiki_copy_page` keep a page's stored title. Before, they wrote back the rendered title, so saving a sheet whose title is Velocity code replaced that code with its output and every record of the class showed the sheet's name. `xwiki_get_page` returns `raw_title` when it differs from the rendered title
