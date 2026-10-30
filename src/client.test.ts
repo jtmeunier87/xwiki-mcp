@@ -111,7 +111,26 @@ describe('getWikiOverview', () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) =>
       new URL(url).pathname.endsWith('/pages') ? pagesFetch(url) : spacesFetch(url)));
     const o = await new XWikiClient().getWikiOverview(1500);
-    expect(o).toMatchObject({ total_pages: 1500, truncated: true });
+    expect(o).toMatchObject({ total_pages: 1500, truncated: true, truncated_reason: 'max_pages' });
+  });
+
+  it('returns a partial overview when the time budget runs out', async () => {
+    const pages = Array.from({ length: 1000 }, (_, i) => ({ id: `xwiki:Docs.P${i}`, fullName: `Docs.P${i}`, space: 'Docs', name: `P${i}` }));
+    const spacesFetch = pagedFetch('/spaces', { 0: [{ id: 'xwiki:Docs', name: 'Docs' }] });
+    // The second /pages batch hangs until its request is aborted.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init: RequestInit) => {
+      const u = new URL(url);
+      if (!u.pathname.endsWith('/pages')) return spacesFetch(url);
+      if (u.searchParams.get('start') === '0') {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ pageSummaries: pages }), headers: { get: () => null } });
+      }
+      return new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(new Error('aborted'))));
+    }));
+    const began = Date.now();
+    const o = await new XWikiClient().getWikiOverview(20000, 200);
+    expect(Date.now() - began).toBeLessThan(2000);
+    expect(o).toMatchObject({ total_pages: 1000, truncated: true, truncated_reason: 'time', last_modified_skipped: 1 });
+    expect(o.spaces).toEqual([{ space: 'Docs', pages: 1000, nested_spaces: 0 }]);
   });
 });
 

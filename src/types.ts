@@ -467,8 +467,12 @@ export interface WikiOverview {
   wiki: string;
   total_spaces: number;
   total_pages: number;
-  /** True when max_pages stopped the page count early */
+  /** True when the page count stopped early */
   truncated: boolean;
+  /** Why it stopped: the page cap, or the time budget */
+  truncated_reason?: 'max_pages' | 'time';
+  /** Top-level spaces left without last_modified because the time budget ran out */
+  last_modified_skipped?: number;
   spaces: WikiOverviewSpace[];
 }
 
