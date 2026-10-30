@@ -1,8 +1,9 @@
 import { inflateRawSync } from 'node:zlib';
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, ClassObjectScanBatch, SkippedObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison } from './types.js';
+import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, ClassObjectScanBatch, SkippedObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison, WikiOverview, WikiOverviewSpace, PageLink } from './types.js';
 import { unifiedDiff } from './diff.js';
 import { htmlToText } from './html-text.js';
+import { outgoingLinks } from './links.js';
 
 export class XWikiError extends Error {
   constructor(message: string, public readonly status?: number) {
@@ -17,6 +18,11 @@ function isFatal(e: unknown): boolean {
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Refusal for a write based on a version of the page that is no longer the current one. */
+export function staleVersionMessage(space: string, page: string, current: string | undefined, expected: string): string {
+  return `Page ${space}/${page} is at version ${current}, not ${expected}: it changed since you read it. Nothing saved. Read it again, then write.`;
+}
 
 /**
  * Split a space reference in dot notation into its space names. A dot or backslash that is part
@@ -348,6 +354,7 @@ export class XWikiClient {
   /**
    * Update an existing page's content, title, or both.
    * Fetches the current page first to preserve fields not being updated.
+   * With expectedVersion, refuses (409) when the page is no longer at that version.
    */
   async updatePage(
     space: string,
@@ -355,9 +362,13 @@ export class XWikiClient {
     content?: string,
     title?: string,
     syntax?: string,
+    expectedVersion?: string,
   ): Promise<PageWriteResult> {
     // Fetch current page to preserve unchanged fields
     const current = await this.getPage(space, page);
+    if (expectedVersion && current.version !== expectedVersion) {
+      throw new XWikiError(staleVersionMessage(space, page, current.version, expectedVersion), 409);
+    }
 
     const path = `${this.spacePath(space)}/pages/${encodeURIComponent(page)}`;
 
@@ -947,6 +958,58 @@ export class XWikiClient {
       ...(classTotals ? { class_totals: classTotals } : {}),
       pages,
     };
+  }
+
+  /**
+   * Every top-level space with its page count, nested space count and last change.
+   * Endpoints: GET /spaces and GET /pages (whole wiki, paged by 1000; hidden pages follow the
+   * account's preference), then one Solr query per top-level space for its latest non-hidden page.
+   */
+  async getWikiOverview(maxPages = 20000): Promise<WikiOverview> {
+    const pageSize = 1000;
+    const tops = new Map<string, WikiOverviewSpace>();
+    const top = (space: string) => {
+      const name = splitSpace(space)[0].replace(/[\\.]/g, '\\$&');
+      let t = tops.get(name);
+      if (!t) tops.set(name, (t = { space: name, pages: 0, nested_spaces: 0 }));
+      return t;
+    };
+
+    for (let start = 0; ; start += pageSize) {
+      const batch = (await this.get<XWikiSpacesResponse>('/spaces', { start, number: pageSize })).spaces ?? [];
+      for (const s of batch) {
+        const local = s.id.slice(s.id.indexOf(':') + 1);
+        const t = top(local);
+        if (splitSpace(local).length > 1) t.nested_spaces++;
+      }
+      if (batch.length < pageSize) break;
+    }
+
+    let totalPages = 0;
+    let truncated = false;
+    for (let start = 0; ; start += pageSize) {
+      const batch = (await this.get<XWikiPagesResponse>('/pages', { start, number: pageSize })).pageSummaries ?? [];
+      for (const p of batch) {
+        if (totalPages >= maxPages) { truncated = true; break; }
+        const space = p.space ?? this.splitReference(p.fullName ?? p.id, p).space;
+        top(space).pages++;
+        totalPages++;
+      }
+      if (truncated || batch.length < pageSize) break;
+    }
+
+    const spaces = [...tops.values()].sort((a, b) => a.space.localeCompare(b.space));
+    await this.mapLimit(spaces, 6, async t => {
+      const prefix = t.space.replace(/["\\]/g, '\\$&');
+      const data = await this.get<XWikiQueryResponse>('/query', {
+        q: `space_prefix:"${prefix}" AND hidden:false`, type: 'solr', number: 1, orderField: 'date', order: 'desc',
+      });
+      const latest = data.searchResults?.[0];
+      if (latest?.modified != null) t.last_modified = this.parseTimestamp(latest.modified);
+      if (latest?.pageFullName) t.last_modified_page = latest.pageFullName;
+    });
+
+    return { wiki: config.wikiName, total_spaces: spaces.length, total_pages: totalPages, truncated, spaces };
   }
 
   /** All children of one page, following the REST paging (start/number). */
@@ -1558,11 +1621,50 @@ export class XWikiClient {
    * Pages that link to a page, from the wiki's link index (Solr links_extended), as the
    * rename job finds them. Leaves out the page itself and pages under excludePrefix.
    */
-  private async findBacklinks(ref: string, excludePrefix?: string): Promise<string[]> {
+  private async findBacklinks(ref: string, excludePrefix?: string, max = 200): Promise<string[]> {
+    const refs = (await this.backlinkIndex(ref, max)).refs;
+    return refs.filter(r => !excludePrefix || !r.startsWith(excludePrefix));
+  }
+
+  /** Pages the link index lists as linking to ref (itself left out); full when max results came back. */
+  private async backlinkIndex(ref: string, max: number): Promise<{ refs: string[]; full: boolean }> {
     const target = `entity:document:${config.wikiName}:${ref}`.replace(/["\\]/g, '\\$&');
-    const results = await this.advancedSearch(`links_extended:"${target}"`, 'solr', 200, 0);
+    const results = await this.advancedSearch(`links_extended:"${target}"`, 'solr', max, 0);
     const refs = new Set(results.map(r => r.page_full_name).filter(r => r && r !== ref));
-    return [...refs].filter(r => !excludePrefix || !r.startsWith(excludePrefix));
+    return { refs: [...refs], full: results.length >= max };
+  }
+
+  /**
+   * A page's links: the pages linking to it (from the link index, at most 1000) and the links
+   * written in its content and, with includeObjects, in its objects' text properties.
+   */
+  async getLinks(
+    space: string,
+    page: string,
+    options: { incoming: boolean; outgoing: boolean; includeObjects: boolean },
+  ): Promise<{ backlinks?: string[]; backlinks_truncated?: boolean; outgoing?: PageLink[] }> {
+    const ref = `${space}.${page}`;
+    const result: { backlinks?: string[]; backlinks_truncated?: boolean; outgoing?: PageLink[] } = {};
+    if (options.outgoing) {
+      const doc = await this.getPage(space, page);
+      const links: PageLink[] = outgoingLinks(doc.content ?? '', doc.syntax).map(l => ({ ...l, in: 'content' }));
+      if (options.includeObjects) {
+        const objects = await this.withObjectProperties(space, page, await this.listObjects(space, page));
+        for (const o of objects) {
+          for (const [prop, value] of Object.entries(o.properties)) {
+            if (typeof value !== 'string' || !/\[\[|\{\{(include|display)\b|\]\(/.test(value)) continue;
+            for (const l of outgoingLinks(value, doc.syntax)) links.push({ ...l, in: `${o.class_name}[${o.number}].${prop}` });
+          }
+        }
+      }
+      result.outgoing = links;
+    }
+    if (options.incoming) {
+      const { refs, full } = await this.backlinkIndex(ref, 1000);
+      result.backlinks = refs.sort();
+      result.backlinks_truncated = full;
+    }
+    return result;
   }
 
   /** Current version of a page given as a full reference (Space.Sub.Page), or undefined if it is gone. */

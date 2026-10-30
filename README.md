@@ -10,11 +10,11 @@ All tool names start with `xwiki_` so they do not clash with other MCP servers. 
 
 ---
 
-## 54 tools across 11 categories
+## 55 tools across 11 categories
 
 | Category | Count | Tools |
 |---|---|---|
-| **Pages (Read)** | 7 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_list_page_children`, `xwiki_get_page_tree`, `xwiki_find_pages`, `xwiki_get_required_rights` |
+| **Pages (Read)** | 8 | `xwiki_list_spaces`, `xwiki_list_pages`, `xwiki_get_page`, `xwiki_list_page_children`, `xwiki_get_page_tree`, `xwiki_get_links`, `xwiki_find_pages`, `xwiki_get_required_rights` |
 | **Pages (Write)** | 6 | `xwiki_create_page`, `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_delete_page` |
 | **Recycle Bin** | 2 | `xwiki_list_deleted_pages`, `xwiki_restore_deleted_page` |
 | **Comments** | 4 | `xwiki_list_comments`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_delete_comment` |
@@ -127,7 +127,7 @@ Tools a mode leaves out are not registered, so clients never see them. The xWiki
 | Mode | Settings | Tools |
 |---|---|---|
 | Read/write, no delete (default) | — | 50: everything except `xwiki_delete_page`, `xwiki_delete_object`, `xwiki_delete_attachment`, `xwiki_delete_comment` |
-| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 54 |
+| Read/write/delete | `XWIKI_MCP_ALLOW_DELETE=true` | All 55 |
 | Read-only | `XWIKI_MCP_READ_ONLY=true` (overrides `XWIKI_MCP_ALLOW_DELETE`) | 32 read tools |
 
 Write tools: `xwiki_create_page`, `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page`, `xwiki_copy_page`, `xwiki_restore_deleted_page`, `xwiki_add_comment`, `xwiki_update_comment`, `xwiki_upload_attachment`, `xwiki_move_attachment`, `xwiki_add_tags`, `xwiki_remove_tags`, `xwiki_set_class_property_enabled`, `xwiki_create_object`, `xwiki_update_object`, `xwiki_update_class_properties`, `xwiki_add_class_property`, `xwiki_rollback_page`.
@@ -153,13 +153,18 @@ List all spaces in the wiki.
 List pages in a space with pagination (`start`, `limit`). Space names use dot notation for nested spaces.
 
 #### `xwiki_get_page`
-Get page content, title, syntax, author, version and parent. `title` is rendered; when the stored title differs (e.g. Velocity code in a sheet's title, which gives each record of the class its own name) it is also returned as `raw_title`. Long content comes in windows of `max_chars` (default 40,000 characters, about 10k tokens): when `content_truncated` is true, call again with `offset` = `next_offset`.
+Get page content, title, syntax, author, version and parent. `title` is rendered; when the stored title differs (e.g. Velocity code in a sheet's title, which gives each record of the class its own name) it is also returned as `raw_title`. Long content comes in windows of `max_chars` (default 40,000 characters, about 10k tokens): when `content_truncated` is true, call again with `offset` = `next_offset`. For a long page, `outline: true` returns its headings instead of the content (each with its number `n`, level, title, `line`, `end_line` and `chars`, the section's size with its subsections), and `section: n` returns only that section, windowed the same way. xwiki/2.x and Markdown headings are read; headings inside code blocks are not counted.
 
 #### `xwiki_list_page_children`
 Get immediate child pages of a given page. Hidden pages (e.g. class, sheet and template pages) are listed only when the xWiki account's Display Hidden Pages preference is on; xWiki's REST API has no option to include them otherwise.
 
 #### `xwiki_get_page_tree`
 Report the whole page tree under a root page in one call. `root_page` is the root's own row (level 0) with its object classes, so a root carrying an object (e.g. an SOP page) is never missed. Each descendant comes back with its reference, title, level (1 = direct child), parent, direct child count, URL and the object classes attached to it with a count per class; `class_totals` counts the pages carrying each class, the root included. Rows are depth-first. `hierarchy` is `parentchild` (the page's parent field, xWiki's REST default) or `nestedpages` (page/space nesting). `max_depth` (default 50) and `max_pages` (default 500, `truncated: true` when reached) bound the walk; `include_objects: false` skips the class listing. Hidden pages (e.g. class, sheet and template pages) are listed only when the xWiki account's Display Hidden Pages preference is on; xWiki's REST API has no option to include them otherwise. Costs one REST request per page for children plus one per page for objects, a few in parallel.
+
+Without `space` and `page` it returns a wiki overview instead: one row per top-level space with `pages` (in it and its nested spaces), `nested_spaces`, and `last_modified` / `last_modified_page` (the latest change to a non-hidden page). It reads the whole page list (one request per 1000 pages, counting at most 20,000, `truncated: true` past that) and makes one Solr query per top-level space.
+
+#### `xwiki_get_links`
+The links around a page. `direction: in` lists the pages linking to it (backlinks) from the wiki's link index, as XWiki's rename finds them, paged with `start` / `limit`; the page does not need to exist, so it also finds pages still linking to a deleted or moved page. The index lags a few seconds behind saves; at most 1000 are read (`backlinks_truncated`). `direction: out` lists the links written in the page's raw content (wiki links, images, `include` / `display` macros, Markdown links), each with its reference as written (relative references are not resolved), its type (`doc`, `page`, `space`, `attach`, `url`, `mailto`, `image`, `include`, `display`, or `untyped`), its line and where it is (`content` or `Class[number].property`); links in code blocks are left out, and `include_objects` (default true, one request per object) also reads the page's object properties. `both` is the default.
 
 #### `xwiki_find_pages`
 Find pages wiki-wide by name, space, and/or author — without needing to know the exact space. Deduplicates results automatically. At least one filter required.
@@ -173,7 +178,7 @@ Analyse which rights a page's content needs (script or programming right for Vel
 Create a new page with title, content, optional parent, and optional syntax.
 
 #### `xwiki_update_page`
-Update an existing page by replacing its whole content, its title, or both. Fetches current version first to preserve fields not specified; an omitted title keeps the stored title, Velocity code included (so does `xwiki_replace_in_page`). To change only part of the content, use `xwiki_replace_in_page`.
+Update an existing page by replacing its whole content, its title, or both. Fetches current version first to preserve fields not specified; `expected_version` refuses the update if the page has changed since that version was read; an omitted title keeps the stored title, Velocity code included (so does `xwiki_replace_in_page`). To change only part of the content, use `xwiki_replace_in_page`.
 
 #### `xwiki_replace_in_page`
 Targeted edit: replace exact pieces of text in a page's content, or in one object property (`class_name`, `object_number`, `property`, e.g. the `code` of a `XWiki.JavaScriptExtension`), without sending the whole text. Made for code on long pages, such as Velocity or Groovy sheets. `edits` is a list of `{old_text, new_text}` applied in order; each `old_text` must occur exactly once (whitespace and line breaks included), and nothing is saved unless every edit matches. `expected_version` refuses the edit if the page has changed since that version was read. The saved text is read back and compared; the result gives the old and new version, the size before and after, and the line of each change. Saving script content still needs the rights the scripts need (`xwiki_get_required_rights`).
@@ -294,7 +299,7 @@ A call scans at most `scan_limit` objects (default 500, max 2000) from `start` a
 Create a new XObject on a page with class name and property key-value map.
 
 #### `xwiki_update_object`
-Update properties of an existing object. Only specified properties are changed, each to the whole value given. To change only part of a long value (e.g. a few lines of code), use `xwiki_replace_in_page`.
+Update properties of an existing object. Only specified properties are changed, each to the whole value given. `expected_version` refuses the update if the page has changed since that version was read. To change only part of a long value (e.g. a few lines of code), use `xwiki_replace_in_page`.
 
 #### `xwiki_delete_object`
 Delete an object by class name and number. Only registered with `XWIKI_MCP_ALLOW_DELETE=true`.
@@ -390,6 +395,7 @@ After deploying a release, test it against your own wiki with the live test plan
 - [x] v0.11.0 — Class editing: `xwiki_update_class_properties`, `xwiki_add_class_property`
 - [x] v0.12.0 — Page tree report: `xwiki_get_page_tree`
 - [x] v0.12.1 — Docker build runs npm natively (fixes the arm64 build crash)
+- [x] v0.23.0 — `xwiki_get_links`: backlinks and the links written in a page and its objects. `xwiki_get_page` reads a long page by its heading `outline` and one `section`. `xwiki_get_page_tree` without a root gives a wiki overview of the top-level spaces. `xwiki_update_page` and `xwiki_update_object` take `expected_version` and refuse to overwrite a newer version
 - [x] v0.22.0 — `xwiki_search_objects`: exact substring or regex search in the property values of a class's objects, returning compact matches
 - [x] v0.21.1 — `xwiki_update_page`, `xwiki_replace_in_page`, `xwiki_move_page` and `xwiki_copy_page` keep a page's stored title. Before, they wrote back the rendered title, so saving a sheet whose title is Velocity code replaced that code with its output and every record of the class showed the sheet's name. `xwiki_get_page` returns `raw_title` when it differs from the rendered title
 - [x] v0.21.0 — `xwiki_get_page_tree` returns `root_page`: the root page's own row with its object classes (before, only descendants were reported, so the root's objects were never listed); `class_totals` includes the root. `xwiki_render_page` renders a page as a reader sees it, through its sheet (plain text came back empty for a page whose sheet draws its view inside an html macro, because xWiki's plain renderer drops html macro output). Tree and children docs say hidden pages need the account's Display Hidden Pages preference

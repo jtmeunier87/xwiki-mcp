@@ -149,6 +149,58 @@ describe('xwiki_replace_in_page', () => {
   });
 });
 
+describe('stale-write guard', () => {
+  it('xwiki_update_page refuses an update based on an older version', async () => {
+    const { register } = await import('./update-page.js');
+    const { XWikiError } = await import('../client.js');
+    const updatePage = vi.fn(async (...a: unknown[]) => {
+      if (a[5] && a[5] !== '3.1') throw new XWikiError('Page Main/P is at version 3.1, not 2.1: it changed since you read it.', 409);
+      return { title: 'T', version: '4.1', url: '', status: 'updated' };
+    });
+    const h = handlerOf(register, { updatePage });
+    const stale = await h({ space: 'Main', page: 'P', content: 'x', expected_version: '2.1' });
+    expect(stale.isError).toBe(true);
+    expect(stale.content[0].text).toMatch(/at version 3\.1, not 2\.1/);
+    expect(updatePage).toHaveBeenLastCalledWith('Main', 'P', 'x', undefined, undefined, '2.1');
+    expect((await h({ space: 'Main', page: 'P', content: 'x', expected_version: '3.1' })).isError).toBeUndefined();
+  });
+
+  it('xwiki_update_object checks the page version before writing', async () => {
+    const { register } = await import('./update-object.js');
+    const updateObject = vi.fn(async () => ({ class_name: 'C', number: 0, status: 'updated' }));
+    const h = handlerOf(register, { getPage: async () => ({ version: '3.1' }), updateObject });
+    const args = { space: 'Main', page: 'P', class_name: 'C', object_number: 0, properties: { a: 'b' } };
+    const stale = await h({ ...args, expected_version: '2.1' });
+    expect(stale.content[0].text).toMatch(/at version 3\.1, not 2\.1.*Nothing saved/);
+    expect(updateObject).not.toHaveBeenCalled();
+    expect((await h({ ...args, expected_version: '3.1' })).isError).toBeUndefined();
+    expect(updateObject).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('xwiki_get_page outline and section', () => {
+  const content = '= A =\none\n== B ==\ntwo\n= C =\nthree';
+  const client = { getPage: async () => ({ title: 'T', content, syntax: 'xwiki/2.1', version: '1.1', url: '' }) };
+
+  it('returns the outline instead of the content', async () => {
+    const { register } = await import('./get-page.js');
+    const r = JSON.parse((await handlerOf(register, client)({ space: 'Main', page: 'P', outline: true, offset: 0, max_chars: 40000 })).content[0].text);
+    expect(r.content).toBeUndefined();
+    expect(r.content_total_lines).toBe(6);
+    expect(r.outline.map((h: { title: string }) => h.title)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('returns one section, windowed, and names a missing one', async () => {
+    const { register } = await import('./get-page.js');
+    const h = handlerOf(register, client);
+    const r = JSON.parse((await h({ space: 'Main', page: 'P', section: 1, offset: 0, max_chars: 40000 })).content[0].text);
+    expect(r.content).toBe('= A =\none\n== B ==\ntwo');
+    expect(r.section).toMatchObject({ n: 1, title: 'A', line: 1, end_line: 4 });
+    const missing = await h({ space: 'Main', page: 'P', section: 7, offset: 0, max_chars: 40000 });
+    expect(missing.content[0].text).toMatch(/has no section 7/);
+  });
+});
+
 describe('htmlToText', () => {
   it('keeps block and list structure, drops scripts and decodes entities', async () => {
     const { htmlToText } = await import('../html-text.js');

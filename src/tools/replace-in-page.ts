@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { XWikiError } from '../client.js';
+import { XWikiError, staleVersionMessage } from '../client.js';
 import type { XWikiClient } from '../client.js';
 import { applyEdits, EditError } from '../edit.js';
 
@@ -50,9 +50,7 @@ export function register(server: McpServer, client: XWikiClient): void {
       try {
         const current = await client.getPage(space, page);
         if (expected_version && current.version !== expected_version) {
-          return fail(
-            `Page ${space}/${page} is at version ${current.version}, not ${expected_version}: it changed since you read it. Read it again, then edit.`,
-          );
+          return fail(staleVersionMessage(space, page, current.version, expected_version));
         }
         const readTarget = async () => {
           if (!class_name) return (await client.getPage(space, page)).content ?? '';

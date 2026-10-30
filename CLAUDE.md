@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MCP (Model Context Protocol) server that gives AI agents read/write access to an XWiki instance through its REST API. TypeScript, MCP TypeScript SDK v2 (`@modelcontextprotocol/server`, `@modelcontextprotocol/node`; tests use `@modelcontextprotocol/client`), stdio or Streamable HTTP transport. Speaks protocol 2026-07-28 and still serves 2025-era clients that open with `initialize` (`serveStdio`, `createMcpHandler`). 54 tools, all prefixed `xwiki_`; README.md is the tool reference.
+MCP (Model Context Protocol) server that gives AI agents read/write access to an XWiki instance through its REST API. TypeScript, MCP TypeScript SDK v2 (`@modelcontextprotocol/server`, `@modelcontextprotocol/node`; tests use `@modelcontextprotocol/client`), stdio or Streamable HTTP transport. Speaks protocol 2026-07-28 and still serves 2025-era clients that open with `initialize` (`serveStdio`, `createMcpHandler`). 55 tools, all prefixed `xwiki_`; README.md is the tool reference.
 
 **This is a public, generic tool.** Never add anything specific to one organisation or wiki: no real space, page, class, user, tag or host names, and no description of how a particular wiki uses its pages or objects. Examples in tool descriptions, tests and docs use neutral names (`Main`, `Sandbox`, `Docs.Guides`, `Sandbox.Code.ExampleClass`, `XWiki.Admin`, `XWiki.JaneDoe`, `wiki.example.com`).
 

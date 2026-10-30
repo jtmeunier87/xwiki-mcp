@@ -79,6 +79,56 @@ describe.skipIf(!URL_)('live XWiki', () => {
     expect(first.modified_date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it('reads a page outline and one section', async () => {
+    await page('Pages', 'Outlined', '= One =\na\n== Two ==\nb\n{{code}}\n= not =\n{{/code}}\n= Three =\nc');
+    const map = await call('xwiki_get_page', { space: `${RUN}.Pages`, page: 'Outlined', outline: true });
+    expect(map.outline.map((h: { title: string }) => h.title)).toEqual(['One', 'Two', 'Three']);
+    const s = await call('xwiki_get_page', { space: `${RUN}.Pages`, page: 'Outlined', section: 2 });
+    expect(s.content).toBe('== Two ==\nb\n{{code}}\n= not =\n{{/code}}');
+  });
+
+  it('refuses whole-page and object updates based on an older version', async () => {
+    await page('Pages', 'Guarded', 'v1');
+    const read = await call('xwiki_get_page', { space: `${RUN}.Pages`, page: 'Guarded' });
+    expect(read.version).toBeTruthy();
+    const ok = await call('xwiki_update_page', { space: `${RUN}.Pages`, page: 'Guarded', content: 'v2', expected_version: read.version });
+    expect(ok.version).not.toBe(read.version);
+    const stale = await callError('xwiki_update_page', { space: `${RUN}.Pages`, page: 'Guarded', content: 'v3', expected_version: read.version });
+    expect(stale).toContain('Nothing saved');
+    await call('xwiki_create_object', { space: `${RUN}.Pages`, page: 'Guarded', class_name: 'XWiki.TagClass', properties: { tags: 'a' } });
+    const objStale = await callError('xwiki_update_object', {
+      space: `${RUN}.Pages`, page: 'Guarded', class_name: 'XWiki.TagClass', object_number: 0, properties: { tags: 'b' }, expected_version: read.version,
+    });
+    expect(objStale).toContain('Nothing saved');
+    expect((await call('xwiki_get_page', { space: `${RUN}.Pages`, page: 'Guarded' })).content).toBe('v2');
+  });
+
+  it('lists outgoing links and backlinks', async () => {
+    await page('Links', 'Target', 't');
+    await page('Links', 'Source', `see [[doc:${RUN}.Links.Target]] and [[label>>https://example.com]]\n{{code}}[[NotALink]]{{/code}}`);
+    const out = await call('xwiki_get_links', { space: `${RUN}.Links`, page: 'Source', direction: 'out' });
+    expect(out.outgoing).toEqual([
+      { reference: `${RUN}.Links.Target`, type: 'doc', line: 1, in: 'content' },
+      { reference: 'https://example.com', type: 'url', line: 1, in: 'content' },
+    ]);
+    const back = await eventually(
+      () => call('xwiki_get_links', { space: `${RUN}.Links`, page: 'Target', direction: 'in' }),
+      r => r.backlinks.length > 0,
+    );
+    expect(back.backlinks).toEqual([`${RUN}.Links.Source`]);
+  });
+
+  it('gives a wiki overview without a root page', async () => {
+    const top = RUN.split('.')[0];
+    const o = await eventually(
+      () => call('xwiki_get_page_tree', {}),
+      (r: { spaces: Array<{ space: string; last_modified?: string }> }) => !!r.spaces.find(s => s.space === top)?.last_modified,
+    );
+    expect(o.total_pages).toBeGreaterThan(0);
+    expect(o.spaces.find((s: { space: string }) => s.space === top)).toMatchObject({ nested_spaces: expect.any(Number), pages: expect.any(Number) });
+    expect(await callError('xwiki_get_page_tree', { space: 'Main' })).toContain('neither');
+  });
+
   it('copies and renames a terminal page', async () => {
     await page('Pages', 'Source');
     const copy = await call('xwiki_copy_page', {

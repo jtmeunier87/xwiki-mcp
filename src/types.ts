@@ -437,6 +437,41 @@ export interface PageTreeNode {
   classes?: Record<string, number>;
 }
 
+/** A link written in a page, for xwiki_get_links. */
+export interface PageLink {
+  /** Target as written, without its type prefix */
+  reference: string;
+  /** doc, page, space, attach, url, mailto, image, include, display, ... or untyped */
+  type: string;
+  /** 1-based line within the text it was found in */
+  line: number;
+  /** "content", or the object property holding it: "Class[number].property" */
+  in: string;
+}
+
+/** One top-level space in xwiki_get_page_tree's wiki overview. */
+export interface WikiOverviewSpace {
+  /** Space name as tools take it (dots in the name escaped) */
+  space: string;
+  /** Pages in the space and all its nested spaces */
+  pages: number;
+  /** Spaces nested in it, at any depth */
+  nested_spaces: number;
+  /** Last change to a non-hidden page in the space, and that page */
+  last_modified?: string;
+  last_modified_page?: string;
+}
+
+/** xwiki_get_page_tree without a root: every top-level space of the wiki. */
+export interface WikiOverview {
+  wiki: string;
+  total_spaces: number;
+  total_pages: number;
+  /** True when max_pages stopped the page count early */
+  truncated: boolean;
+  spaces: WikiOverviewSpace[];
+}
+
 export interface PageTree {
   root: string;
   /** The root page itself (level 0), with its own object classes */
