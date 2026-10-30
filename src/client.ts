@@ -1,6 +1,6 @@
 import { inflateRawSync } from 'node:zlib';
 import { config } from './config.js';
-import type { XWikiSpacesResponse, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, ClassObjectScanBatch, SkippedObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison, WikiOverview, WikiOverviewSpace, PageLink } from './types.js';
+import type { XWikiSpacesResponse, XWikiSpaceRaw, XWikiPagesResponse, XWikiPageRaw, XWikiSearchResponse, XWikiAttachmentsResponse, XWikiAttachmentRaw, XWikiCommentsResponse, XWikiCommentRaw, XWikiTagsResponse, XWikiClassesResponse, XWikiClassRaw, XWikiObjectsResponse, XWikiObjectRaw, XWikiHistoryResponse, XWikiPageVersionRaw, XWikiQueryResponse, Space, PageSummary, Page, PageWriteResult, AttachmentWriteResult, SearchResult, Attachment, Comment, Pagination, Tag, XWikiClass, XWikiObject, XWikiObjectWriteResult, HistorySummary, QueryResult, RenderResult, RecentChange, XWikiWikiTagsResponse, XWikiTaggedPagesResponse, XWikiWikiPagesResponse, XWikiObjectPropertyResponse, WikiTag, ObjectProperty, ExportResult, RollbackResult, ClassUpdateResult, ClassAddResult, XWikiPageSummaryRaw, PageTree, PageTreeNode, XWikiClassObjectSummaryRaw, ClassObject, ClassObjectScanBatch, SkippedObject, AttachmentSearchResult, TagRemoveResult, MovePageResult, XWikiRequiredRightsResponse, RequiredRightsReport, CopyPageResult, DeletedPage, XWikiDeletedDocumentsResponse, XWikiDeletedDocumentsTemplateResponse, RestorePageResult, ClassPropertyStateResult, AttachmentMoveResult, AttachmentVersion, ClassPropertyValue, VersionComparison, WikiOverview, WikiOverviewSpace, PageLink } from './types.js';
 import { unifiedDiff } from './diff.js';
 import { htmlToText } from './html-text.js';
 import { outgoingLinks } from './links.js';
@@ -198,8 +198,8 @@ export class XWikiClient {
   // ---------------------------------------------------------------------------
 
   async listSpaces(): Promise<Space[]> {
-    const data = await this.get<XWikiSpacesResponse>('/spaces');
-    return (data.spaces ?? []).map(s => ({
+    const spaces = await this.readAll<XWikiSpacesResponse, XWikiSpaceRaw>('/spaces', d => d.spaces);
+    return spaces.map(s => ({
       id: s.id,
       name: s.name,
       home_url: s.xwikiAbsoluteUrl ?? '',
@@ -975,18 +975,16 @@ export class XWikiClient {
       return t;
     };
 
-    for (let start = 0; ; start += pageSize) {
-      const batch = (await this.get<XWikiSpacesResponse>('/spaces', { start, number: pageSize })).spaces ?? [];
-      for (const s of batch) {
-        const local = s.id.slice(s.id.indexOf(':') + 1);
-        const t = top(local);
-        if (splitSpace(local).length > 1) t.nested_spaces++;
-      }
-      if (batch.length < pageSize) break;
+    for (const s of await this.readAll<XWikiSpacesResponse, XWikiSpaceRaw>('/spaces', d => d.spaces)) {
+      const local = s.id.slice(s.id.indexOf(':') + 1);
+      const t = top(local);
+      if (splitSpace(local).length > 1) t.nested_spaces++;
     }
 
     let totalPages = 0;
     let truncated = false;
+    // XWiki drops entries it filters (rights, hidden) after paging, so a short batch is not the
+    // last one: only an empty batch ends the list.
     for (let start = 0; ; start += pageSize) {
       const batch = (await this.get<XWikiPagesResponse>('/pages', { start, number: pageSize })).pageSummaries ?? [];
       for (const p of batch) {
@@ -995,7 +993,7 @@ export class XWikiClient {
         top(space).pages++;
         totalPages++;
       }
-      if (truncated || batch.length < pageSize) break;
+      if (truncated || batch.length === 0) break;
     }
 
     const spaces = [...tops.values()].sort((a, b) => a.space.localeCompare(b.space));
@@ -1041,6 +1039,21 @@ export class XWikiClient {
   }
 
   /** Map over items with at most `limit` requests in flight, keeping order. */
+  /**
+   * Every entry of a wiki-level REST list, paged by 1000 until an empty batch. XWiki filters
+   * entries (rights, hidden) after paging, so a batch can be short while more remain.
+   */
+  private async readAll<R, T>(path: string, items: (data: R) => T[] | undefined, maxBatches = 100): Promise<T[]> {
+    const pageSize = 1000;
+    const all: T[] = [];
+    for (let i = 0; i < maxBatches; i++) {
+      const batch = items(await this.get<R>(path, { start: i * pageSize, number: pageSize })) ?? [];
+      if (batch.length === 0) break;
+      all.push(...batch);
+    }
+    return all;
+  }
+
   private async mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
     const results = new Array<R>(items.length);
     let next = 0;

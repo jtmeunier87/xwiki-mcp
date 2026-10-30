@@ -41,10 +41,24 @@ beforeEach(() => {
 // listSpaces
 // ---------------------------------------------------------------------------
 
+/** A wiki-level list endpoint that answers by start: batches[start / 1000], then nothing. */
+function pagedFetch(key: string, batches: Record<string, unknown[]>) {
+  return vi.fn().mockImplementation((url: string) => {
+    const u = new URL(url);
+    const path = u.pathname.replace('/rest/wikis/xwiki', '');
+    const start = Number(u.searchParams.get('start') ?? 0);
+    const body = path === key ? { [key.slice(1) === 'pages' ? 'pageSummaries' : 'spaces']: batches[start] ?? [] } : { searchResults: [] };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body), headers: { get: () => null } });
+  });
+}
+
+const spaceRows = (from: number, n: number, top = 'Docs') =>
+  Array.from({ length: n }, (_, i) => ({ id: `xwiki:${top}.S${from + i}`, name: `S${from + i}` }));
+
 describe('listSpaces', () => {
   it('maps spaces to compact format', async () => {
-    vi.stubGlobal('fetch', mockFetch({
-      spaces: [
+    vi.stubGlobal('fetch', pagedFetch('/spaces', {
+      0: [
         { id: 'xwiki:Main', name: 'Main', xwikiAbsoluteUrl: 'https://wiki.example.com/Main' },
         { id: 'xwiki:Sandbox', name: 'Sandbox', xwikiAbsoluteUrl: 'https://wiki.example.com/Sandbox' },
       ],
@@ -63,6 +77,41 @@ describe('listSpaces', () => {
     vi.stubGlobal('fetch', mockFetch({}));
     const client = new XWikiClient();
     expect(await client.listSpaces()).toEqual([]);
+  });
+
+  it('pages past a short batch until an empty one', async () => {
+    // XWiki filters after paging: the first batch of 1000 holds 999, more follow.
+    const fetch = pagedFetch('/spaces', { 0: spaceRows(0, 999), 1000: spaceRows(1000, 5, 'Sandbox') });
+    vi.stubGlobal('fetch', fetch);
+    const spaces = await new XWikiClient().listSpaces();
+    expect(spaces).toHaveLength(1004);
+    expect(spaces.at(-1)?.id).toBe('xwiki:Sandbox.S1004');
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('getWikiOverview', () => {
+  it('reads every space and page although the first batches are short', async () => {
+    const pages = (top: string, from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ id: `xwiki:${top}.P${from + i}`, fullName: `${top}.P${from + i}`, space: top, name: `P${from + i}` }));
+    const spacesFetch = pagedFetch('/spaces', { 0: [...spaceRows(0, 998), { id: 'xwiki:Docs', name: 'Docs' }], 1000: [{ id: 'xwiki:Sandbox', name: 'Sandbox' }] });
+    const pagesFetch = pagedFetch('/pages', { 0: pages('Docs', 0, 1000), 1000: pages('Docs', 1000, 966), 2000: pages('Sandbox', 0, 3) });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) =>
+      new URL(url).pathname.endsWith('/pages') ? pagesFetch(url) : spacesFetch(url)));
+    const o = await new XWikiClient().getWikiOverview();
+    expect(o.truncated).toBe(false);
+    expect(o.total_pages).toBe(1969);
+    expect(o.spaces.map(s => [s.space, s.pages, s.nested_spaces])).toEqual([['Docs', 1966, 998], ['Sandbox', 3, 0]]);
+  });
+
+  it('marks the overview truncated at the page cap', async () => {
+    const pages = Array.from({ length: 1000 }, (_, i) => ({ id: `xwiki:Docs.P${i}`, fullName: `Docs.P${i}`, space: 'Docs', name: `P${i}` }));
+    const pagesFetch = pagedFetch('/pages', { 0: pages, 1000: pages });
+    const spacesFetch = pagedFetch('/spaces', { 0: [{ id: 'xwiki:Docs', name: 'Docs' }] });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) =>
+      new URL(url).pathname.endsWith('/pages') ? pagesFetch(url) : spacesFetch(url)));
+    const o = await new XWikiClient().getWikiOverview(1500);
+    expect(o).toMatchObject({ total_pages: 1500, truncated: true });
   });
 });
 
