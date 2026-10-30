@@ -18,6 +18,8 @@ function isFatal(e: unknown): boolean {
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** Time the wiki overview may take, under the 60 s tool timeout many MCP clients use. */
+export const OVERVIEW_BUDGET_MS = 40000;
 
 /** Refusal for a write based on a version of the page that is no longer the current one. */
 export function staleVersionMessage(space: string, page: string, current: string | undefined, expected: string): string {
@@ -85,7 +87,7 @@ export class XWikiClient {
     return this.csrfToken ?? '';
   }
 
-  private async get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+  private async get<T>(path: string, params: Record<string, string | number> = {}, timeoutMs = config.timeoutMs): Promise<T> {
     const url = new URL(`${this.wikiBase}${path}`);
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.set(k, String(v));
@@ -98,7 +100,7 @@ export class XWikiClient {
     try {
       response = await fetch(urlStr, {
         headers: { Accept: 'application/json', ...this.authHeaders() },
-        signal: AbortSignal.timeout(config.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
       throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
@@ -964,9 +966,13 @@ export class XWikiClient {
    * Every top-level space with its page count, nested space count and last change.
    * Endpoints: GET /spaces and GET /pages (whole wiki, paged by 1000; hidden pages follow the
    * account's preference), then one Solr query per top-level space for its latest non-hidden page.
+   * The page count and the searches stop at budgetMs (each request is cut to the time left), so a
+   * large wiki gets a partial overview within the client's tool timeout instead of none.
    */
-  async getWikiOverview(maxPages = 20000): Promise<WikiOverview> {
+  async getWikiOverview(maxPages = 20000, budgetMs = OVERVIEW_BUDGET_MS): Promise<WikiOverview> {
     const pageSize = 1000;
+    const deadline = Date.now() + budgetMs;
+    const left = () => deadline - Date.now();
     const tops = new Map<string, WikiOverviewSpace>();
     const top = (space: string) => {
       const name = splitSpace(space)[0].replace(/[\\.]/g, '\\$&');
@@ -982,32 +988,55 @@ export class XWikiClient {
     }
 
     let totalPages = 0;
-    let truncated = false;
+    let truncated: WikiOverview['truncated_reason'];
     // XWiki drops entries it filters (rights, hidden) after paging, so a short batch is not the
     // last one: only an empty batch ends the list.
-    for (let start = 0; ; start += pageSize) {
-      const batch = (await this.get<XWikiPagesResponse>('/pages', { start, number: pageSize })).pageSummaries ?? [];
+    for (let start = 0; !truncated; start += pageSize) {
+      if (left() <= 0) { truncated = 'time'; break; }
+      let batch: XWikiPageSummaryRaw[];
+      try {
+        batch = (await this.get<XWikiPagesResponse>('/pages', { start, number: pageSize }, Math.min(config.timeoutMs, left()))).pageSummaries ?? [];
+      } catch (e) {
+        if (left() <= 0) { truncated = 'time'; break; }
+        throw e;
+      }
       for (const p of batch) {
-        if (totalPages >= maxPages) { truncated = true; break; }
+        if (totalPages >= maxPages) { truncated = 'max_pages'; break; }
         const space = p.space ?? this.splitReference(p.fullName ?? p.id, p).space;
         top(space).pages++;
         totalPages++;
       }
-      if (truncated || batch.length === 0) break;
+      if (batch.length === 0) break;
     }
 
     const spaces = [...tops.values()].sort((a, b) => a.space.localeCompare(b.space));
+    let skipped = 0;
     await this.mapLimit(spaces, 6, async t => {
+      if (left() <= 0) { skipped++; return; }
       const prefix = t.space.replace(/["\\]/g, '\\$&');
-      const data = await this.get<XWikiQueryResponse>('/query', {
-        q: `space_prefix:"${prefix}" AND hidden:false`, type: 'solr', number: 1, orderField: 'date', order: 'desc',
-      });
+      let data: XWikiQueryResponse;
+      try {
+        data = await this.get<XWikiQueryResponse>('/query', {
+          q: `space_prefix:"${prefix}" AND hidden:false`, type: 'solr', number: 1, orderField: 'date', order: 'desc',
+        }, Math.min(config.timeoutMs, left()));
+      } catch (e) {
+        if (left() <= 0) { skipped++; return; }
+        throw e;
+      }
       const latest = data.searchResults?.[0];
       if (latest?.modified != null) t.last_modified = this.parseTimestamp(latest.modified);
       if (latest?.pageFullName) t.last_modified_page = latest.pageFullName;
     });
 
-    return { wiki: config.wikiName, total_spaces: spaces.length, total_pages: totalPages, truncated, spaces };
+    return {
+      wiki: config.wikiName,
+      total_spaces: spaces.length,
+      total_pages: totalPages,
+      truncated: !!truncated,
+      ...(truncated && { truncated_reason: truncated }),
+      ...(skipped > 0 && { last_modified_skipped: skipped }),
+      spaces,
+    };
   }
 
   /** All children of one page, following the REST paging (start/number). */
