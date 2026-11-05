@@ -2,6 +2,8 @@ import { readFileSync } from 'fs';
 
 export interface Config {
   baseUrl: string;
+  /** Public wiki address used in links returned to clients (XWIKI_PUBLIC_URL); empty = baseUrl */
+  publicUrl: string;
   authType: 'basic' | 'token' | 'none';
   username: string;
   password: string;
@@ -73,6 +75,11 @@ function load(): Config {
     throw new Error('XWIKI_BASE_URL environment variable is required');
   }
 
+  const publicUrl = (process.env.XWIKI_PUBLIC_URL ?? '').trim();
+  if (publicUrl && !/^https?:\/\//.test(publicUrl)) {
+    throw new Error(`XWIKI_PUBLIC_URL must start with http:// or https://, got: ${publicUrl}`);
+  }
+
   const rawAuthType = process.env.XWIKI_AUTH_TYPE ?? 'basic';
   if (!['basic', 'token', 'none'].includes(rawAuthType)) {
     throw new Error(`XWIKI_AUTH_TYPE must be basic|token|none, got: ${rawAuthType}`);
@@ -92,6 +99,7 @@ function load(): Config {
 
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
+    publicUrl: publicUrl.replace(/\/$/, ''),
     authType: rawAuthType as Config['authType'],
     username: process.env.XWIKI_USERNAME ?? '',
     password: secret('XWIKI_PASSWORD'),

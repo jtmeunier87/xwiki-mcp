@@ -51,6 +51,15 @@ export function titleFor(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * Replace the internal XWiki address (XWIKI_BASE_URL) with the public one (XWIKI_PUBLIC_URL)
+ * in text sent back to clients, so links can be opened by users. No change when unset.
+ */
+export function publicLinks(text: string): string {
+  if (!config.publicUrl || config.publicUrl === config.baseUrl) return text;
+  return text.split(config.baseUrl).join(config.publicUrl);
+}
+
 // Tool calls in the last minute, across every client of this process (XWIKI_MCP_RATE_LIMIT).
 const recentCalls: number[] = [];
 
@@ -74,7 +83,8 @@ const errorResult = (text: string) => ({ content: [{ type: 'text' as const, text
 
 /**
  * Wrap a tool callback: enforce the rate limit, turn a thrown error into an isError
- * result, add structuredContent when the text result is a JSON object, and log the call.
+ * result, rewrite internal links to public ones, add structuredContent when the text
+ * result is a JSON object, and log the call.
  */
 function guard<T extends (...args: never[]) => unknown>(name: string, cb: T): T {
   return (async (...args: Parameters<T>) => {
@@ -89,6 +99,14 @@ function guard<T extends (...args: never[]) => unknown>(name: string, cb: T): T 
         result = (await cb(...args)) as ToolResult;
       } catch (e) {
         result = errorResult(e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (config.publicUrl) {
+      for (const item of result.content ?? []) {
+        if (item.type === 'text' && typeof item.text === 'string') item.text = publicLinks(item.text);
+      }
+      if (result.structuredContent !== undefined) {
+        result.structuredContent = JSON.parse(publicLinks(JSON.stringify(result.structuredContent)));
       }
     }
     const first = result.content?.[0];
