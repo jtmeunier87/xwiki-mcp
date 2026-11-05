@@ -7,11 +7,11 @@
     "url": "https://github.com/jtmeunier87/xwiki-mcp",
     "source": "github"
   },
-  "version": "0.23.2",
+  "version": "0.23.3",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/jtmeunier87/xwiki-mcp:0.23.2",
+      "identifier": "ghcr.io/jtmeunier87/xwiki-mcp:0.23.3",
       "transport": {
         "type": "stdio"
       },
@@ -20,6 +20,10 @@
           "name": "XWIKI_BASE_URL",
           "description": "Wiki base URL without /rest, e.g. https://wiki.example.com",
           "isRequired": true
+        },
+        {
+          "name": "XWIKI_PUBLIC_URL",
+          "description": "Public wiki address used in links returned to clients, when XWIKI_BASE_URL is internal"
         },
         {
           "name": "XWIKI_AUTH_TYPE",
