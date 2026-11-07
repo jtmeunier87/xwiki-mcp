@@ -109,9 +109,13 @@ Mocked tests cannot prove a write is saved. Add a live test for every write or `
 |---|---|
 | 400 | `"XWiki rejected the request (400): {reason from XWiki}. URL: {url}"` |
 | 404 | `"Page not found: {space}/{page}"` |
-| 401/403 | `"Authentication failed. Check XWIKI_AUTH_TYPE and credentials."` |
+| 401 | `"Authentication failed. Check XWIKI_AUTH_TYPE and credentials."` |
+| 403 | `"Permission denied (403): the XWiki account lacks the right for this request. URL: {url}"` |
 | 500 | `"XWiki server error: {status}. URL: {url}"` |
+| Timeout | `"XWiki at {baseUrl} did not answer within {ms} ms. Try again, or raise XWIKI_TIMEOUT_MS."` |
 | Network | `"Cannot connect to XWiki at {baseUrl}. Check XWIKI_BASE_URL."` |
+
+`xwiki_get_page`'s 404 also names the other reference shape (nested `{space}.{page}` + `WebHome`, or terminal parent space + last name) and points to `xwiki_find_pages`. The 401/403 and timeout split is in `get`, `mutate` and the CSRF token request in `client.ts`; the `/bin/` action paths still use their own messages.
 
 Tool errors must be returned as `isError` results, never crash the MCP server process (`registry.ts` turns any thrown error into one; tools still map 404s to their own messages). Invalid configuration fails at startup.
 

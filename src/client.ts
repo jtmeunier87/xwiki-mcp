@@ -17,6 +17,21 @@ function isFatal(e: unknown): boolean {
   return !(e instanceof XWikiError) || e.status === undefined || e.status === 401 || e.status === 403;
 }
 
+/** The error for a fetch that threw: a timeout (AbortSignal.timeout) or no connection. */
+function fetchFailure(e: unknown, timeoutMs: number): XWikiError {
+  if ((e as { name?: unknown } | null)?.name === 'TimeoutError') {
+    return new XWikiError(`XWiki at ${config.baseUrl} did not answer within ${timeoutMs} ms. Try again, or raise XWIKI_TIMEOUT_MS.`);
+  }
+  return new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+}
+
+/** 401: the credentials are refused. 403: they are accepted but lack the right. */
+function accessFailure(status: number, url: string): XWikiError {
+  return status === 401
+    ? new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', 401)
+    : new XWikiError(`Permission denied (${status}): the XWiki account lacks the right for this request. URL: ${url}`, status);
+}
+
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Time the wiki overview may take, under the 60 s tool timeout many MCP clients use. */
 export const OVERVIEW_BUDGET_MS = 40000;
@@ -75,10 +90,15 @@ export class XWikiClient {
     const url = new URL(`${this.wikiBase}`);
     url.searchParams.set('media', 'json');
 
-    const response = await fetch(url.toString(), {
-      headers: { Accept: 'application/json', ...this.authHeaders() },
-      signal: AbortSignal.timeout(config.timeoutMs),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        headers: { Accept: 'application/json', ...this.authHeaders() },
+        signal: AbortSignal.timeout(config.timeoutMs),
+      });
+    } catch (e) {
+      throw fetchFailure(e, config.timeoutMs);
+    }
 
     const token = response.headers.get('XWiki-Form-Token');
     if (token) {
@@ -102,15 +122,15 @@ export class XWikiClient {
         headers: { Accept: 'application/json', ...this.authHeaders() },
         signal: AbortSignal.timeout(timeoutMs),
       });
-    } catch {
-      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    } catch (e) {
+      throw fetchFailure(e, timeoutMs);
     }
 
     if (response.status === 404) {
       throw new XWikiError(`Not found: ${path}`, 404);
     }
     if (response.status === 401 || response.status === 403) {
-      throw new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
+      throw accessFailure(response.status, urlStr);
     }
     if (response.status === 400) {
       // XWiki explains a rejected request in a short text body (e.g. a query type not allowed).
@@ -154,8 +174,8 @@ export class XWikiClient {
         body: body as BodyInit ?? undefined,
         signal: AbortSignal.timeout(config.timeoutMs * 4),
       });
-    } catch {
-      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    } catch (e) {
+      throw fetchFailure(e, config.timeoutMs * 4);
     }
 
     // If 403, the CSRF token may be stale — refresh and retry once
@@ -171,14 +191,14 @@ export class XWikiClient {
             body: body as BodyInit ?? undefined,
             signal: AbortSignal.timeout(config.timeoutMs * 4),
           });
-        } catch {
-          throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+        } catch (e) {
+          throw fetchFailure(e, config.timeoutMs * 4);
         }
       }
     }
 
     if (response.status === 401 || response.status === 403) {
-      throw new XWikiError('Authentication or permission error. Check credentials and page access rights.', response.status);
+      throw accessFailure(response.status, url.toString());
     }
     if (response.status === 404) {
       throw new XWikiError(`Not found: ${path}`, 404);
