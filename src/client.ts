@@ -2136,11 +2136,13 @@ export class XWikiClient {
         redirect: 'manual',
         signal: AbortSignal.timeout(timeoutMs),
       });
-    } catch {
-      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    } catch (e) {
+      throw fetchFailure(e, timeoutMs);
     }
-    if (response.status === 401 || response.status === 403) {
-      throw new XWikiError(`Authentication or permission error. ${rightsHint}`, response.status);
+    if (response.status === 401) throw accessFailure(401, url);
+    if (response.status === 403) {
+      const denied = accessFailure(403, url);
+      throw new XWikiError(`${denied.message} ${rightsHint}`, 403);
     }
     if (response.status >= 400 && response.status !== 409) {
       throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
@@ -2174,12 +2176,10 @@ export class XWikiClient {
         headers: { Accept: 'application/json', ...this.authHeaders() },
         signal: AbortSignal.timeout(config.timeoutMs),
       });
-    } catch {
-      throw new XWikiError(`Cannot connect to XWiki at ${config.baseUrl}. Check XWIKI_BASE_URL.`);
+    } catch (e) {
+      throw fetchFailure(e, config.timeoutMs);
     }
-    if (response.status === 401 || response.status === 403) {
-      throw new XWikiError('Authentication failed. Check XWIKI_AUTH_TYPE and credentials.', response.status);
-    }
+    if (response.status === 401 || response.status === 403) throw accessFailure(response.status, url);
     if (optional && response.status === 404) return undefined;
     if (!response.ok) throw new XWikiError(`XWiki server error: ${response.status}. URL: ${url}`, response.status);
     if (!optional) return response.json() as Promise<T>;
