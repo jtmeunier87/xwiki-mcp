@@ -1,8 +1,24 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { XWikiError } from '../client.js';
+import { XWikiError, splitSpace } from '../client.js';
 import type { XWikiClient } from '../client.js';
 import { outline as headings, section as sectionOf } from '../outline.js';
+
+const escapeName = (name: string) => name.replace(/[\\.]/g, '\\$&');
+
+/** A 404, with the other reference shape the same page could have. */
+function notFoundMessage(space: string, page: string): string {
+  let other: string;
+  if (page !== 'WebHome') {
+    other = ` If ${space}.${page} is a nested page, call with space "${space}.${escapeName(page)}" and page "WebHome".`;
+  } else {
+    const names = splitSpace(space);
+    other = names.length > 1
+      ? ` If ${space} is a terminal page, call with space "${names.slice(0, -1).map(escapeName).join('.')}" and page "${names.at(-1)}".`
+      : '';
+  }
+  return `Page not found: ${space}/${page}.${other} If unsure of the reference, look it up with xwiki_find_pages.`;
+}
 
 export function register(server: McpServer, client: XWikiClient): void {
   server.registerTool(
@@ -12,8 +28,13 @@ export function register(server: McpServer, client: XWikiClient): void {
         'Get the content and metadata of a wiki page. Content is raw wiki markup (e.g. xwiki/2.1). Long content is returned in windows of max_chars characters: when content_truncated is true, call again with offset = next_offset for the rest.\n\n' +
         'For a long page, read its map first: outline: true returns the headings instead of the content, each with its number n, level, title, line, end_line and chars (the section\'s size, subsections included). Then section: n returns only that section (its heading and subsections included), windowed the same way. Headings inside code blocks are not counted.',
       inputSchema: z.object({
-        space: z.string().describe('Space name. Use dot notation for nested spaces: "Space1.SubSpace"'),
-        page: z.string().describe('Page name (e.g. "WebHome", "MyPage")'),
+        space: z
+          .string()
+          .describe(
+            'Space reference, dot notation for nested spaces. A nested page Docs.Guides (Docs.Guides.WebHome) is space "Docs.Guides" + page "WebHome"; ' +
+              'a terminal page Docs.Guides.Setup is space "Docs.Guides" + page "Setup". If unsure which, use xwiki_find_pages first.',
+          ),
+        page: z.string().describe('Page name: "WebHome" for a nested page, the last part of the reference for a terminal page (e.g. "Setup")'),
         outline: z.boolean().default(false).describe('Return the heading outline instead of the content (default false)'),
         section: z.number().int().min(1).optional().describe('Return only this section: its n from the outline'),
         offset: z.number().int().min(0).default(0).describe('First character of content to return (default 0)'),
@@ -62,7 +83,7 @@ export function register(server: McpServer, client: XWikiClient): void {
         return { content: [{ type: 'text', text: JSON.stringify(windowed) }] };
       } catch (e) {
         const msg =
-          e instanceof XWikiError && e.status === 404 ? `Page not found: ${space}/${page}` : e instanceof Error ? e.message : String(e);
+          e instanceof XWikiError && e.status === 404 ? notFoundMessage(space, page) : e instanceof Error ? e.message : String(e);
         return { content: [{ type: 'text', text: msg }], isError: true };
       }
     },

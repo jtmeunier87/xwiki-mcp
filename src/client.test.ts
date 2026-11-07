@@ -363,6 +363,153 @@ describe('error handling', () => {
       message: expect.stringContaining('Cannot connect to XWiki'),
     });
   });
+
+  // What fetch rejects with when AbortSignal.timeout fires.
+  const timeout = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+
+  it('reports a 403 on a read as missing rights, not failed authentication', async () => {
+    vi.stubGlobal('fetch', mockFetch({}, 403));
+
+    const e = await new XWikiClient().getPage('Main', 'Private').catch(e => e);
+    expect(e).toMatchObject({ name: 'XWikiError', status: 403, message: expect.stringContaining('Permission denied') });
+    expect(e.message).not.toContain('Authentication failed');
+  });
+
+  it('reports a read that times out as a timeout, not a connection failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeout()));
+
+    const e = await new XWikiClient().listSpaces().catch(e => e);
+    expect(e).toMatchObject({ name: 'XWikiError', message: expect.stringContaining('did not answer within 30000 ms') });
+    expect(e.message).not.toContain('Cannot connect');
+  });
+
+  it('tells a 401 from a 403 on a write', async () => {
+    vi.stubGlobal('fetch', mockFetch({}, 401));
+    await expect(new XWikiClient().uploadAttachment('Main', 'WebHome', 'a.txt', 'aGVsbG8=', 'text/plain')).rejects.toMatchObject({
+      status: 401, message: 'Authentication failed. Check XWIKI_AUTH_TYPE and credentials.',
+    });
+
+    vi.stubGlobal('fetch', mockFetch({}, 403));
+    const e = await new XWikiClient().uploadAttachment('Main', 'WebHome', 'a.txt', 'aGVsbG8=', 'text/plain').catch(e => e);
+    expect(e).toMatchObject({ status: 403, message: expect.stringContaining('Permission denied') });
+    expect(e.message).not.toContain('Authentication');
+  });
+
+  it('reports a write that times out as a timeout', async () => {
+    const fetch = mockFetch({});
+    fetch.mockResolvedValueOnce(await mockFetch({})()).mockRejectedValueOnce(timeout());
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(new XWikiClient().uploadAttachment('Main', 'WebHome', 'a.txt', 'aGVsbG8=', 'text/plain')).rejects.toMatchObject({
+      name: 'XWikiError', message: expect.stringContaining('did not answer within 120000 ms'),
+    });
+  });
+
+  it('wraps a failed or timed-out CSRF token request in an XWikiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    await expect(new XWikiClient().uploadAttachment('Main', 'WebHome', 'a.txt', 'aGVsbG8=', 'text/plain')).rejects.toMatchObject({
+      name: 'XWikiError', message: expect.stringContaining('Cannot connect to XWiki'),
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeout()));
+    await expect(new XWikiClient().uploadAttachment('Main', 'WebHome', 'a.txt', 'aGVsbG8=', 'text/plain')).rejects.toMatchObject({
+      name: 'XWikiError', message: expect.stringContaining('did not answer within 30000 ms'),
+    });
+  });
+});
+
+describe('/bin/ action diagnostics', () => {
+  const timeout = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  const actionUrl = 'https://wiki.example.com/bin/undelete/Main/Gone';
+
+  /** restorePage: page lookup 404 (absent), CSRF token, then the POST answers with `post`. */
+  async function restoreWith(post: { status?: number; error?: unknown }) {
+    const fetch = vi.fn();
+    fetch.mockResolvedValueOnce(await mockFetch({}, 404)());
+    fetch.mockResolvedValueOnce(await mockFetch({}, 200)());
+    if (post.error) fetch.mockRejectedValueOnce(post.error);
+    else fetch.mockResolvedValueOnce(await mockFetch({}, post.status)());
+    vi.stubGlobal('fetch', fetch);
+    return new XWikiClient().restorePage('Main', 'Gone', 7).catch(e => e);
+  }
+
+  it('postPageAction reports a 401 as failed authentication', async () => {
+    const e = await restoreWith({ status: 401 });
+    expect(e).toMatchObject({ name: 'XWikiError', status: 401, message: 'Authentication failed. Check XWIKI_AUTH_TYPE and credentials.' });
+  });
+
+  it('postPageAction reports a 403 as missing rights and keeps the hint', async () => {
+    const e = await restoreWith({ status: 403 });
+    expect(e).toMatchObject({
+      name: 'XWikiError', status: 403,
+      message: `Permission denied (403): the XWiki account lacks the right for this request. URL: ${actionUrl} `
+        + 'Restoring a page needs the right to undelete it (usually its deleter or an admin).',
+    });
+    expect(e.message).not.toContain('Authentication');
+  });
+
+  it('postPageAction reports a timeout after 120000 ms and a network failure as a connection failure', async () => {
+    const t = await restoreWith({ error: timeout() });
+    expect(t).toMatchObject({ name: 'XWikiError', message: 'XWiki at https://wiki.example.com did not answer within 120000 ms. Try again, or raise XWIKI_TIMEOUT_MS.' });
+    const n = await restoreWith({ error: new TypeError('fetch failed') });
+    expect(n).toMatchObject({ name: 'XWikiError', message: 'Cannot connect to XWiki at https://wiki.example.com. Check XWIKI_BASE_URL.' });
+  });
+
+  it('fetchActionJson reports a 401 as failed authentication', async () => {
+    vi.stubGlobal('fetch', mockFetch({}, 401));
+    const e = await new XWikiClient().listDeletedPages('Main').catch(e => e);
+    expect(e).toMatchObject({ name: 'XWikiError', status: 401, message: 'Authentication failed. Check XWIKI_AUTH_TYPE and credentials.' });
+  });
+
+  it('fetchActionJson reports a 403 as missing rights', async () => {
+    const fetch = mockFetch({}, 403);
+    vi.stubGlobal('fetch', fetch);
+    const e = await new XWikiClient().listDeletedPages('Main').catch(e => e);
+    const url = String(fetch.mock.calls[0][0]);
+    expect(url.startsWith('https://wiki.example.com/bin/get/XWiki/DeletedDocumentsJSON?')).toBe(true);
+    expect(e).toMatchObject({ name: 'XWikiError', status: 403 });
+    expect(e.message).toBe(`Permission denied (403): the XWiki account lacks the right for this request. URL: ${url}`);
+  });
+
+  it('fetchActionJson reports a timeout after 30000 ms and a network failure as a connection failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeout()));
+    const t = await new XWikiClient().listDeletedPages('Main').catch(e => e);
+    expect(t).toMatchObject({ name: 'XWikiError', message: 'XWiki at https://wiki.example.com did not answer within 30000 ms. Try again, or raise XWIKI_TIMEOUT_MS.' });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    const n = await new XWikiClient().listDeletedPages('Main').catch(e => e);
+    expect(n).toMatchObject({ name: 'XWikiError', message: 'Cannot connect to XWiki at https://wiki.example.com. Check XWIKI_BASE_URL.' });
+  });
+});
+
+describe('xwiki_get_page not found', () => {
+  async function notFound(space: string, page: string): Promise<string> {
+    const { register } = await import('./tools/get-page.js');
+    let handler: ((args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>) | undefined;
+    const client = { getPage: async () => { throw new XWikiError(`Not found: /spaces/${space}/pages/${page}`, 404); } };
+    register({ registerTool: (_n: string, _c: unknown, f: typeof handler) => { handler = f; } } as never, client as never);
+    const r = await handler!({ space, page, outline: false, offset: 0, max_chars: 40000 });
+    expect(r.isError).toBe(true);
+    return r.content[0].text;
+  }
+
+  it('suggests the nested form of a terminal reference', async () => {
+    const text = await notFound('Docs', 'Guides');
+    expect(text).toMatch(/^Page not found: Docs\/Guides\./);
+    expect(text).toContain('space "Docs.Guides" and page "WebHome"');
+    expect(text).toContain('xwiki_find_pages');
+  });
+
+  it('suggests the terminal form of a nested reference', async () => {
+    const text = await notFound('Docs.Guides.Setup', 'WebHome');
+    expect(text).toContain('space "Docs.Guides" and page "Setup"');
+    expect(text).toContain('xwiki_find_pages');
+  });
+
+  it('has no terminal form to suggest for a top-level space home', async () => {
+    const text = await notFound('Main', 'WebHome');
+    expect(text).not.toContain('terminal page');
+    expect(text).toContain('xwiki_find_pages');
+  });
 });
 
 // ---------------------------------------------------------------------------
